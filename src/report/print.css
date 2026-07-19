@@ -1,0 +1,48 @@
+/* 2-page report: print-CSS path, no PDF library. The overlay is portaled to <body>. */
+
+.report-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: auto;
+  background: #334155; /* slate backdrop on screen */
+  padding: 24px 0 64px;
+}
+
+.report-page {
+  width: 8.5in;
+  min-height: 11in;
+  margin: 0 auto 24px;
+  padding: 0.6in;
+  background: #fff;
+  color: #0b0e14;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.report-page h1 { font-size: 18px; }
+.report-page h2 { font-size: 13px; }
+
+@media print {
+  html, body { height: auto; background: #fff; }
+  /* hide the live board; render only the report */
+  #root { display: none !important; }
+  .report-overlay {
+    position: static;
+    overflow: visible;
+    background: #fff;
+    padding: 0;
+  }
+  .report-chrome { display: none !important; }
+  .report-page {
+    box-shadow: none;
+    margin: 0;
+    width: auto;
+    min-height: auto;
+    padding: 0;
+    page-break-after: always;
+  }
+  .report-page:last-child { page-break-after: auto; }
+  @page { size: Letter; margin: 14mm; }
+}

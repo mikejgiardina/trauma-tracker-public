@@ -1,0 +1,166 @@
+{
+  "_meta": {
+    "purpose": "SYNTHETIC per-facility protocol configuration. What tools, devices, drug preparations and identifiers a given facility uses in a trauma resus — so the extractor can recognise them and the deliverable can reflect local convention. Two layers: `catalog` (the commonly-used options — the standardised part) and `facilities` (which option each site selects — the personalised part).",
+    "status": "PROPOSAL — STRETCH GOAL. Not on the gameday critical path. This file is DATA ONLY: no code reads it yet, and nothing in the demo depends on it. See ./FACILITY_PROTOCOLS.md for the argument and the honest limits.",
+    "origin": "Founder direction, 2026-07-17. Named examples: NPI, the Belmont transfuser cassette, Ancef set to 20 cc NS push. Carried as an open item on docs/adr/0014-the-tool-presents-an-abstractor-signs.md.",
+    "synthetic_only": true,
+
+    "naming_rule": "FACILITIES ARE ARCHETYPES, NOT NAMES — and this is deliberate. The demo is staged at Conemaugh Memorial (design/mockup-v3.html:236), a REAL Level I centre, whose ER physician (Damian Mosher) attends in person on 7/18. Writing 'Conemaugh's protocol is X' would fabricate a fact about a real named institution in front of someone who works there. So no facility here carries a real or invented brand name. Each is a letter plus an `archetype` describing what it represents. The archetype is what carries the meaning; a name would only carry risk. If a real facility's real protocol is ever wanted, it is ASKED FOR, not invented — same rule as every other clinical claim in this repo.",
+
+    "routing": "This file deliberately carries NO `verify_owner` field. The other four data files hardcode `verify_owner: \"cory\"`, who is out (7/16 roster) — lint assertion F has been failing on that drift and cannot fix itself. Routing here lives in `open_questions.json` (CLIN-Q8, CLIN-Q9, CODER-Q12) instead, which is the one place that is already enforced in both directions. A name in a data file goes stale; the ledger does not.",
+
+    "not_wired_in": [
+      "tools/lint_reference.mjs — does NOT read this file. Wiring it in would add a 5th assertion and change the required output from `3 pass · 4 known/tracked · 0 fail` to `4 pass`. That needs an explicit OK, so it is not done here. See FACILITY_PROTOCOLS.md §5.",
+      "tools/build_glossary.mjs — does NOT read this file, so it will NOT appear in PROGRAM_DATASET_GLOSSARY. Same reason.",
+      "tools/pack_submission.sh — does NOT copy this file, so it will NOT ship Saturday. That is a founder packing call, not this thread's."
+    ],
+
+    "what_is_asserted_here": "ONLY that a synthetic facility has adopted a convention. NOTHING here asserts what is clinically correct, what is standard practice, or what most hospitals do. A facility protocol is definitionally local — Facility A's protocol IS whatever Facility A says it is, and there is no external standard to be wrong about. That is what makes this file safe to author synthetically when charges.json is not. The moment a row claims 'this is how it is generally done', it stops being config and becomes a clinical claim, and it must be asked instead. Rows that drift toward that line carry `verify`.",
+
+    "synthetic_npi_rule": "Every NPI here is DELIBERATELY INVALID, two ways over. (1) Leading digit 9 — issued NPIs begin with 1 or 2 (3 and 4 are reserved); 9 has never been allocated. (2) The check digit deliberately fails. NPI's last digit is a Luhn check over '80840' + the first 9 digits; each value below is off by 5 from its correct check digit. Verified against the canonical valid example 1234567893. WHY BOTHER: NPPES is a public registry, so a plausible-looking NPI is not PHI — it is worse in a different way. It is very likely to belong to a REAL provider, and putting a real provider's identifier on a fabricated trauma encounter falsely associates a named human with an event that never happened. A randomly-generated 'realistic' NPI is the failure mode; an unallocatable one is the fix."
+  },
+
+  "catalog": {
+    "_comment": "The standardised layer — the options that actually show up, independent of any one site. This is what an extractor would need to recognise. `says` are the phrases a room actually uses; they are the seed of a trigger list, NOT a shipped trigger list — nothing here has been collision-tested against reference/proposed/collision_corpus.jsonl. See FACILITY_PROTOCOLS.md §4 for the two collisions already visible by inspection.",
+
+    "RAPID_TRANSFUSION_DEVICE": {
+      "label": "Rapid transfusion / warming device",
+      "why_it_matters": "design/mockup-v3.html:300 already prompts 'MTP activated. Confirm rapid transfusion — pressure bag or rapid infuser?' with three buttons. THAT PROMPT IS A FACILITY QUESTION THE TOOL IS ASKING THE ROOM. A site running one device does not have two answers — the config resolves it and the prompt never renders. This is the single clearest existing evidence that the protocol layer is not a bolt-on: the design already has the hole.",
+      "options": [
+        {
+          "id": "BELMONT",
+          "device": "Belmont Rapid Infuser",
+          "disposable": "single-patient circuit / cassette",
+          "says": ["belmont", "belmont's primed", "on the belmont", "rapid infuser", "rapid infuser's primed"],
+          "disposable_is_a_supply": {
+            "claim": "The per-patient cassette is a consumable and plausibly a billable supply line.",
+            "status": "NOT ASSERTED — this is the money question and it is a coder's, not ours.",
+            "verify": "NEEDS-CODER [CODER-Q12]"
+          },
+          "_founder_example": "Named directly in the 7/17 direction ('the belmont transfuser cassette')."
+        },
+        {
+          "id": "LEVEL1",
+          "device": "Level 1 rapid infuser",
+          "disposable": "single-patient disposable set",
+          "says": ["level one infuser", "level 1 infuser", "rapid infuser"],
+          "⚠️_collision": "'level one' is ALREADY a trigger for OBL-TRM-ACT-068X ('trauma activation, level one'). A device called Level 1 and an activation tier called level one are THE SAME TOKENS. This is COL-001's class exactly — and unlike COL-001 it cannot be fixed by rewriting a line, because both phrases are things a real room really says. Recognising this device at all requires scoping, not a phrase list. Named here so the hazard is on the record before anyone builds it.",
+          "verify": "NEEDS-CLINICIAN [CLIN-Q9]"
+        },
+        {
+          "id": "PRESSURE_BAG",
+          "device": "none — pressure bag / manual",
+          "disposable": null,
+          "says": ["pressure bag", "open wide", "squeeze it in"],
+          "_note": "The absence of a device is itself a facility configuration, and it is the one that changes what the room says most."
+        }
+      ]
+    },
+
+    "OPEN_FX_PROPHYLAXIS": {
+      "label": "Open-fracture antibiotic prophylaxis",
+      "why_it_matters": "THE REPO ALREADY DISAGREES WITH ITSELF ABOUT THIS DRUG'S NAME, and that is the whole argument for this file in one line. fixtures/trauma_callout_script_v2.md:115 has the room say 'one gram of cefazolin'. The founder's 7/17 direction says 'ancef'. Same drug — cefazolin is the generic, Ancef the brand. Which one gets said aloud is facility and regional habit, not medicine. An extractor that knows one and not the other misses the event entirely, and no amount of clinical review catches it because BOTH are correct.",
+      "drug": {
+        "generic": "cefazolin",
+        "brand": "Ancef",
+        "says": ["gram of cefazolin", "cefazolin", "gram of ancef", "ancef", "prophylactic antibiotics", "antibiotics for the open fracture"],
+        "_in_script_today": "'one gram of cefazolin' — trauma_callout_script_v2.md:115, with the RN readback at :116. Already mapped to MED-ABX as a NEW trigger at trauma_callout_script_v2.md:173. MED-ABX is roadmap-scoped (build_glossary.mjs CHARGE_SCOPE) and carries cpt:null, so nothing demo-critical hangs on this."
+      },
+      "preparation_options": [
+        {
+          "id": "PUSH_20ML",
+          "preparation": "1 g reconstituted in 20 mL normal saline, IV push",
+          "says": ["twenty of saline", "20 cc push", "push it", "slam it"],
+          "_founder_example": "Named directly in the 7/17 direction ('ancef is set to 20cc NS push in a resus').",
+          "⚠️_this_is_the_line": "This is the one row in this file that is NOT purely configuration. 'Facility A pushes it' is config and is safe to invent. '20 cc NS is how Ancef is given in a resus' is a CLINICAL AND PHARMACY claim and is NOT ours to assert. Recorded here as the founder's stated convention for a synthetic site — attributed, not adopted. Do not restate it as practice.",
+          "verify": "NEEDS-CLINICIAN [CLIN-Q8]"
+        },
+        {
+          "id": "IVPB",
+          "preparation": "1 g in premixed piggyback, infused",
+          "says": ["hang the ancef", "piggyback", "hang it"],
+          "_note": "Modelled as the contrast case. Whether an infused dose is 'given' at hang time or at completion is a real timing question for any door-to-antibiotic measure — and it is a DIFFERENT question at a push site, where there is no gap. Named, not answered.",
+          "verify": "NEEDS-CLINICIAN [CLIN-Q8]"
+        }
+      ]
+    },
+
+    "ORG_IDENTITY": {
+      "label": "Facility and provider identifiers (NPI)",
+      "why_it_matters": "NPI was named in the 7/17 direction alongside the Belmont cassette and the Ancef push — but it is NOT the same kind of thing, and treating it as one would model it wrong. An NPI is not a tool used in a resus. It is an IDENTIFIER, and it belongs in this file for a different and better reason: it is how the deliverable says WHO. That lands directly on a beat the demo already has — design/mockup-v3.html:263 prompts 'MedSTAR is reporting a ground intervention. Who placed the IO?' and the answer is an attribution, because (mockup-v3.html:271) the flight service 'bills against this same MR'. Attribution without an identifier is a name in a text field. With one, it is a claim line.",
+      "kinds": [
+        {
+          "id": "NPI_TYPE_2",
+          "kind": "organisational NPI",
+          "attaches_to": "the facility, and separately to each billing service (e.g. an affiliated air service)",
+          "_note": "Feeds the 'deliverable labeling by audience' item carried open on ADR-0014 — an RCM table's identifiers are what its destination system of record actually keys on."
+        },
+        {
+          "id": "NPI_TYPE_1",
+          "kind": "individual provider NPI",
+          "attaches_to": "the human who performed the act",
+          "⚠️_not_solved_by_this_file": "Mapping a VOICE in an ambient recording to an individual NPI is not a protocol-config problem. It needs speaker identity, which this project does not have and ADR-0004 (spoken data only) points away from. This row exists to NAME that gap, not to imply the config closes it. A facility can tell you its roster; it cannot tell you who was speaking."
+        }
+      ]
+    },
+
+    "TRAUMA_DESIGNATION": {
+      "label": "Trauma centre designation",
+      "why_it_matters": "THIS FIELD ALREADY EXISTS AND IS ALREADY LOAD-BEARING ON $2,450. reference/proposed/obligations.json:59-62 carries `facility_precondition: facility.trauma_designation in ['state_designated','locally_designated','ACS_verified']` on OBL-TRM-ACT-068X — with the note 'Not case-level — a config constant. Included because the flat chargemaster has no way to say it. ASSUME TRUE FOR THE DEMO.' The obligations model already needed a facility config layer, could not express one, and hardcoded an assumption instead. This file is where that field was always going to have to live.",
+      "options": ["ACS_verified", "state_designated", "locally_designated", "none"],
+      "source": "CMS MLN Matters MM5438 — 068x is restricted to designated/verified trauma centres. Already on the record as finding F-4TH ('068x is restricted to state/locally designated or ACS-verified trauma centers — not a case-level condition, but a qualification input the model currently cannot express').",
+      "_note": "Sourced to primary CMS and already in findings.json. Unlike every other row in this file, this one is not an invention — it is a condition the repo already knows it cannot express."
+    },
+
+    "MTP_PACK": {
+      "label": "Massive transfusion pack composition",
+      "why_it_matters": "MTP is central to the script (T+1:05, T+5:00) and the product ratio is a measure the mockup names (mockup-v3.html:301, 'TQIP product-ratio measure'). What is IN a pack, and how many units land per pack, is set per facility by the blood bank — so 'how many units' is not answerable from the audio alone at a site whose pack is 6:6:1 and a site whose pack is 4:4:1. That is directly upstream of F-B, which already records that 86921 is a PER-UNIT code and 'the unit count is anyone's guess'.",
+      "options": [
+        { "id": "PACK_1_1_1_6U", "composition": "6 PRBC : 6 FFP : 1 apheresis platelet", "says": ["mtp pack", "cooler", "next cooler", "pack two"] },
+        { "id": "PACK_1_1_1_4U", "composition": "4 PRBC : 4 FFP : 1 apheresis platelet", "says": ["mtp pack", "cooler"] },
+        { "id": "NO_PACK", "composition": "no MTP protocol — emergency-release O-neg by unit, transfer out", "says": ["o-neg", "uncrossmatched"] }
+      ],
+      "⚠️_not_asserted": "The ratios above are structure, not a recommendation. Whether a given ratio is right care is not this file's claim and not this project's business — the repo already declines safety-material prompts on purpose (open_questions.json not_pending: 'CDS is a regulated-device conversation this project doesn't need').",
+      "verify": "NEEDS-CLINICIAN [CLIN-Q9]"
+    }
+  },
+
+  "facilities": [
+    {
+      "id": "FAC-A",
+      "archetype": "Urban academic Level I, ACS-verified, high volume. The demo's implicit assumptions, made explicit.",
+      "npi_org": { "value": "9999999990", "type": 2, "synthetic": true, "check_digit_valid": false, "_correct_check_digit_would_be": 5 },
+      "trauma_designation": "ACS_verified",
+      "protocols": {
+        "RAPID_TRANSFUSION_DEVICE": "BELMONT",
+        "OPEN_FX_PROPHYLAXIS": { "drug_said_as": "brand", "preparation": "PUSH_20ML" },
+        "MTP_PACK": "PACK_1_1_1_6U"
+      },
+      "_demo_relevance": "This is the facility the demo is already implicitly configured for. 068x qualifies on designation. The mockup's 'pressure bag or rapid infuser?' prompt would NOT render here — the config already answers it."
+    },
+    {
+      "id": "FAC-B",
+      "archetype": "Community Level II, state-designated. Same care, different vocabulary — the case for personalisation that does not depend on anything failing.",
+      "npi_org": { "value": "9999999982", "type": 2, "synthetic": true, "check_digit_valid": false, "_correct_check_digit_would_be": 7 },
+      "trauma_designation": "state_designated",
+      "protocols": {
+        "RAPID_TRANSFUSION_DEVICE": "LEVEL1",
+        "OPEN_FX_PROPHYLAXIS": { "drug_said_as": "generic", "preparation": "IVPB" },
+        "MTP_PACK": "PACK_1_1_1_4U"
+      },
+      "_demo_relevance": "Every clinical act is identical to FAC-A. EVERY PHRASE IS DIFFERENT: 'cefazolin' not 'Ancef', 'hang it' not 'push it', 'Level 1 infuser' not 'Belmont'. An extractor tuned on FAC-A's room and pointed at FAC-B's room misses the same events while being clinically correct about all of them. This row is the argument: personalisation is not a luxury tier, it is what makes the same product work at the second hospital. It also carries the Level-1-infuser / level-one-activation collision — see catalog."
+    },
+    {
+      "id": "FAC-C",
+      "archetype": "Rural non-designated critical access. Stabilise and transfer.",
+      "npi_org": { "value": "9999999974", "type": 2, "synthetic": true, "check_digit_valid": false, "_correct_check_digit_would_be": 9 },
+      "trauma_designation": "none",
+      "protocols": {
+        "RAPID_TRANSFUSION_DEVICE": "PRESSURE_BAG",
+        "OPEN_FX_PROPHYLAXIS": { "drug_said_as": "generic", "preparation": "IVPB" },
+        "MTP_PACK": "NO_PACK"
+      },
+      "_demo_relevance": "THE ROW THAT PROVES THE FILE IS LOAD-BEARING AND NOT COSMETIC. trauma_designation: 'none' fails OBL-TRM-ACT-068X's facility_precondition. The $2,450 line does not qualify — not because of anything anyone said or failed to say in the room, but because of a config constant the flat chargemaster cannot express and the demo currently hardcodes to true. Same audio, same perfect documentation, different facility, no fee. If protocols were only vocabulary this row would not exist; it is here because designation is money. NOTE: this is exactly the condition CODER-Q9(9b) already asks about ('does 068x require prehospital notification or inter-hospital transfer — we don't model that condition at all'), and finding F-4TH already names. It is not a new claim. It is an existing, sourced, unanswered one finally having somewhere to live."
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "_meta": {
+    "purpose": "Bundled chargemaster for the single-device demo (lifted from supabase/seed.sql so the demo needs no DB). Prices/codes are illustrative for demo realism, not a real chargemaster.",
+    "synthetic_only": true
+  },
+  "charge_items": [
+    {"code": "TRM-ACT",   "name": "Trauma Team Activation - Level 1",           "price": 2450.00, "category": "Activation", "cpt": null,    "role_scope": ["physician"], "requires": ["activation criteria met", "activation documented", "team responded"]},
+    {"code": "AWY-ETI",   "name": "Endotracheal Intubation",                    "price": 850.00,  "category": "Airway",     "cpt": "31500", "role_scope": ["physician"], "requires": ["airway confirmation (EtCO2 + bilateral BS)"]},
+    {"code": "PRC-CHT",   "name": "Tube Thoracostomy (Chest Tube)",             "price": 1200.00, "category": "Procedure",  "cpt": "32551", "role_scope": ["physician"], "requires": ["placement documented"]},
+    {"code": "PRC-FAST",  "name": "FAST Exam (Focused Assessment, Sonography)", "price": 275.00,  "category": "Imaging",    "cpt": "76705", "role_scope": ["physician"], "requires": ["exam performed"]},
+    {"code": "IV-ACC2",   "name": "IV Access, Large-Bore x2",                   "price": 95.00,   "category": "Access",     "cpt": "36000", "role_scope": ["rn"]},
+    {"code": "LAB-TCX",   "name": "Type and Crossmatch, 2 Units PRBC",          "price": 180.00,  "category": "Lab",        "cpt": "86921", "role_scope": ["rn", "physician"]},
+    {"code": "CC-TIME",   "name": "Critical Care Time, First 30-74 min",        "price": 325.00,  "category": "E/M",        "cpt": "99291", "role_scope": ["physician"], "requires": [">= 30 min documented"]},
+    {"code": "PRC-CLINE", "name": "Central Venous Line Placement",              "price": 610.00,  "category": "Procedure",  "cpt": "36556", "role_scope": ["physician"]},
+    {"code": "SPLINT",    "name": "Extremity Splinting",                        "price": 140.00,  "category": "Procedure",  "cpt": "29105", "role_scope": ["physician", "rn"]},
+    {"code": "WOUND-CX",  "name": "Complex Wound Repair, Scalp",                "price": 310.00,  "category": "Procedure",  "cpt": "12052", "role_scope": ["physician"]},
+    {"code": "LAB-LACT",  "name": "Serum Lactate",                              "price": 45.00,   "category": "Lab",        "cpt": "83605", "role_scope": ["rn"]},
+    {"code": "LAB-CX2",   "name": "Blood Cultures x2",                          "price": 90.00,   "category": "Lab",        "cpt": "87040", "role_scope": ["rn"]},
+    {"code": "MED-ABX",   "name": "Broad-Spectrum Antibiotics, First Dose",     "price": 210.00,  "category": "Medication", "cpt": null,    "role_scope": ["rn", "physician"]},
+    {"code": "IMG-EKG",   "name": "12-Lead EKG",                                "price": 60.00,   "category": "Imaging",    "cpt": "93000", "role_scope": ["rn"]},
+    {"code": "CATH-PCI",  "name": "Cardiac Cath Lab Activation (PCI)",          "price": 3200.00, "category": "Activation", "cpt": "92941", "role_scope": ["physician"]}
+  ]
+}

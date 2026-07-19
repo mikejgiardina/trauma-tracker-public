@@ -1,0 +1,53 @@
+{
+  "_meta": {
+    "purpose": "Hand-validated expected output of the lane chain run against fixtures/trauma_callout_script.md. Use as the golden fixture for the Wed happy-path spike and gameday integration. Scores computed from reference/trauma_scores.json.",
+    "case": "Bed 4 / SYN-0007",
+    "synthetic_only": true
+  },
+  "values_heard": [
+    {"t_rel": "T+0:00", "name": "Age", "value": 34, "unit": "years", "raw": "Thirty-four-year-old male"},
+    {"t_rel": "T+0:00", "name": "Sex", "value": "male", "raw": "Thirty-four-year-old male"},
+    {"t_rel": "T+0:00", "name": "GCS", "value": 13, "raw": "EMS report: GCS 13 on scene"},
+    {"t_rel": "T+0:00", "name": "HR", "value": 128, "unit": "bpm"},
+    {"t_rel": "T+0:00", "name": "BP", "value": "88/54", "unit": "mmHg"},
+    {"t_rel": "T+0:00", "name": "RR", "value": 24, "unit": "/min"},
+    {"t_rel": "T+0:50", "name": "HR", "value": 132, "unit": "bpm"},
+    {"t_rel": "T+0:50", "name": "BP", "value": "84/50", "unit": "mmHg"},
+    {"t_rel": "T+0:50", "name": "SpO2", "value": 94, "unit": "% RA"},
+    {"t_rel": "T+1:05", "name": "GCS", "value": 9, "raw": "GCS is now nine"},
+    {"t_rel": "T+2:40", "name": "chest_tube_output", "value": 200, "unit": "mL dark blood"}
+  ],
+  "score_timeline": [
+    {"t_rel": "T+0:00", "GCS": 13, "shock_index": 1.45, "RTS": 7.11, "note": "SI 128/88; RTS GCS4+SBP3+RR4"},
+    {"t_rel": "T+0:50", "shock_index": 1.57, "note": "SI 132/84 — worsening"},
+    {"t_rel": "T+1:05", "GCS": 9, "RTS": 6.17, "note": "GCS drop 13->9 drives RTS 7.11->6.17"}
+  ],
+  "charges": [
+    {"code": "TRM-ACT",  "for_event": "trauma activation", "t_rel": "T+0:00", "documented": true},
+    {"code": "IV-ACC2",  "for_event": "IV access x2 16g", "t_rel": "T+0:20", "documented": true},
+    {"code": "LAB-TCX",  "for_event": "type and cross 2 units", "t_rel": "T+0:20", "documented": true},
+    {"code": "AWY-ETI",  "cpt": "31500", "for_event": "intubation (confirmed EtCO2 + bilateral BS)", "t_rel": "T+1:35", "documented": true},
+    {"code": "PRC-FAST", "cpt": "76705", "for_event": "FAST exam", "t_rel": "T+1:50", "documented": true},
+    {"code": "PRC-CHT",  "cpt": "32551", "for_event": "chest tube placed L 5th ICS", "t_rel": "T+2:40", "documented": true},
+    {"code": "CC-TIME",  "cpt": "99291", "for_event": "critical care time started", "t_rel": "T+3:15", "documented": true},
+    {"code": "SPLINT",   "cpt": "29105", "for_event": "extremity splint R femur", "t_rel": "T+3:30", "documented": true}
+  ],
+  "measures_satisfied": [
+    {"measure_id": "AIRWAY_SECURED_CONFIRMED", "by_event": "intubation confirmed", "t_rel": "T+1:35", "status": "met"},
+    {"measure_id": "TRAUMA_SURGEON_BEDSIDE", "by_event": "surgery at bedside", "t_rel": "T+3:10", "elapsed_min": 3.17, "target_min": 15, "status": "met"},
+    {"measure_id": "EFAST_PRIMARY_SURVEY", "by_event": "FAST exam", "t_rel": "T+1:50", "target_min": 10, "status": "met"}
+  ],
+  "flags": [],
+  "_flag_note": "This script performs FAST early (T+1:50), so the EFAST miss-watch is SATISFIED, not fired. To DEMO the timer-driven miss pop-up, use a variant script where FAST is delayed past T+10:00 (or drop it) — record both, and choose live based on which arm you want to show. Add `fixtures/trauma_callout_script_efast_miss.md`.",
+  "trauma_activation_fee": {
+    "qualifies": true,
+    "criteria_met": [
+      {"category": "mechanism", "criterion": "ejection", "evidence": "unrestrained driver, ejected on scene (placard)"},
+      {"category": "physiologic", "criterion": "SBP < 90 mmHg", "evidence": "BP 88/54 at T+0:00, 84/50 at T+0:50"},
+      {"category": "physiologic", "criterion": "GCS < 9 or acute deterioration", "evidence": "GCS 13 -> 9 (acute deterioration), airway secured"}
+    ],
+    "activation_documented": true,
+    "team_responded": true,
+    "roadmap": "Full ISS/DRG severity abstraction out of demo scope."
+  }
+}

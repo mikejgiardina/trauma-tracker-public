@@ -1,0 +1,37 @@
+{
+  "_meta": {
+    "purpose": "Deterministic trauma-score formulas computed live from captured vitals/exam. These are code, not an LLM lane — the physiology-monitor lane just feeds inputs; the score is a pure function.",
+    "status": "Formulas from standard published scoring. GCS / RTS / Shock Index are confidently encoded. MGAP / GAP intentionally omitted pending Damian-verified coding (don't ship a wrong formula).",
+    "verify_owner": "damian"
+  },
+  "scores": {
+    "GCS": {
+      "name": "Glasgow Coma Scale",
+      "range": [3, 15],
+      "components": {
+        "eye": {"spontaneous": 4, "to_voice": 3, "to_pain": 2, "none": 1},
+        "verbal": {"oriented": 5, "confused": 4, "inappropriate_words": 3, "incomprehensible": 2, "none": 1},
+        "motor": {"obeys": 6, "localizes": 5, "withdraws": 4, "flexion": 3, "extension": 2, "none": 1}
+      },
+      "compute": "eye + verbal + motor"
+    },
+    "SHOCK_INDEX": {
+      "name": "Shock Index",
+      "compute": "HR / SBP",
+      "interpretation": {"normal": "0.5-0.7", "elevated": ">0.9 (occult shock)", "critical": ">=1.0"}
+    },
+    "RTS": {
+      "name": "Revised Trauma Score",
+      "range": [0, 7.84],
+      "compute": "0.9368*GCS_c + 0.7326*SBP_c + 0.2908*RR_c",
+      "coding": {
+        "GCS_c": [{"range": "13-15", "c": 4}, {"range": "9-12", "c": 3}, {"range": "6-8", "c": 2}, {"range": "4-5", "c": 1}, {"range": "3", "c": 0}],
+        "SBP_c": [{"range": ">89", "c": 4}, {"range": "76-89", "c": 3}, {"range": "50-75", "c": 2}, {"range": "1-49", "c": 1}, {"range": "0", "c": 0}],
+        "RR_c": [{"range": "10-29", "c": 4}, {"range": ">29", "c": 3}, {"range": "6-9", "c": 2}, {"range": "1-5", "c": 1}, {"range": "0", "c": 0}]
+      },
+      "interpretation": "Lower = worse. ~7.84 = normal physiology."
+    },
+    "MGAP": {"name": "Mechanism/GCS/Age/Pressure", "status": "TODO — add with Damian-verified coding", "compute": null},
+    "GAP": {"name": "GCS/Age/Pressure", "status": "TODO — add with Damian-verified coding", "compute": null}
+  }
+}

@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+/* ED-RCM ambient capture — base theme.
+   Tailwind v4 tokens; touch-first (iPad Safari is the target board device). */
+@theme {
+  --color-bg: #0b0e14;
+  --color-surface: #141925;
+  --color-surface-2: #1c2330;
+  --color-border: #2a3342;
+  --color-text: #e6eaf2;
+  --color-text-dim: #93a0b4;
+  --color-accent: #3b82f6;
+  --color-ok: #22c55e;
+  --color-warn: #f59e0b;
+  --color-crit: #ef4444;
+  --font-sans: system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  /* honor iOS safe areas on the board device */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* 44px minimum tap target floor (D2 — iPad Safari) */
+button,
+[role="button"] {
+  min-height: 44px;
+}
+
+/* The 2-page report owns its own stylesheet (src/report/print.css), imported by
+   Report.tsx. The report overlay is portaled to <body> and uses .report-overlay /
+   .report-chrome / .report-page — print.css handles both screen and @media print.
+   No report rules belong here. */

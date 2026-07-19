@@ -1,0 +1,130 @@
+{
+  "_meta": {
+    "purpose": "Public, published quality-measure / accreditation time-standards the compliance lane checks captured events against. The 'absent-by-deadline' arm of the extract-and-compare engine fires a miss/possible-miss when clock elapses past target with no matching captured event.",
+    "status": "DEMO REFERENCE — compiled from public published standards. Pending clinician sign-off (Damian Mosher, ER MD). NOT for clinical use as-is.",
+    "synthetic_only": true,
+    "verify_owner": "damian"
+  },
+  "measures": [
+    {
+      "id": "TRAUMA_SURGEON_BEDSIDE",
+      "name": "Trauma surgeon at bedside (highest-level activation)",
+      "standard": "ACS Committee on Trauma (Level I/II)",
+      "clock_start": "patient_arrival",
+      "target_min": 15,
+      "type": "response_time",
+      "case_triggered": true,
+      "reimbursement_link": "Supports the trauma team activation charge (rev code 0681 / G0390) when activation criteria are met AND documented AND the team responded.",
+      "verify": true
+    },
+    {
+      "id": "TRAUMA_ACTIVATION_CRITERIA",
+      "name": "Highest-level trauma activation criteria (any one qualifies)",
+      "standard": "ACS COT / state trauma designation",
+      "type": "qualification_ruleset",
+      "criteria": {
+        "physiologic": ["SBP < 90 mmHg", "GCS < 9 or acute deterioration", "RR < 10 or > 29", "need for definitive airway", "requiring blood on arrival"],
+        "anatomic": ["penetrating injury head/neck/torso/proximal extremity", "flail chest", "2+ proximal long-bone fractures", "amputation proximal to wrist/ankle", "pelvic fracture", "open/depressed skull fracture", "paralysis"],
+        "mechanism": ["ejection", "death in same compartment", "fall > 20 ft (adult)", "high-risk auto crash (intrusion, extrication)", "auto vs. pedestrian/bike thrown or > 20 mph"]
+      },
+      "reimbursement_link": "Meeting ANY criterion + documented activation qualifies the trauma-activation fee. This is the rule-check the reimbursement lane runs — tractable, not full DRG abstraction.",
+      "verify": true
+    },
+    {
+      "id": "AIRWAY_SECURED_CONFIRMED",
+      "name": "Definitive airway placement confirmed",
+      "standard": "Trauma primary survey / documentation",
+      "type": "event_documentation",
+      "case_triggered": true,
+      "confirmation_required": ["EtCO2 waveform", "bilateral breath sounds"],
+      "reimbursement_link": "Endotracheal intubation charge (CPT 31500) requires documented confirmation.",
+      "verify": true
+    },
+    {
+      "id": "STEMI_DOOR_TO_ECG",
+      "name": "Door-to-ECG",
+      "standard": "CMS / ACC-AHA STEMI",
+      "clock_start": "patient_arrival",
+      "target_min": 10,
+      "type": "diagnostic_time",
+      "case_triggered": false,
+      "verify": true
+    },
+    {
+      "id": "STEMI_DOOR_TO_BALLOON",
+      "name": "Door-to-balloon (primary PCI)",
+      "standard": "CMS / ACC-AHA STEMI",
+      "clock_start": "patient_arrival",
+      "target_min": 90,
+      "type": "intervention_time",
+      "case_triggered": false,
+      "verify": true
+    },
+    {
+      "id": "SEP1_3HR_BUNDLE",
+      "name": "Severe sepsis 3-hour bundle",
+      "standard": "CMS SEP-1",
+      "clock_start": "sepsis_recognition",
+      "target_min": 180,
+      "type": "bundle",
+      "elements": ["initial lactate", "blood cultures BEFORE antibiotics", "broad-spectrum antibiotics"],
+      "case_triggered": false,
+      "verify": true
+    },
+    {
+      "id": "SEP1_6HR_BUNDLE",
+      "name": "Severe sepsis / septic shock 6-hour bundle",
+      "standard": "CMS SEP-1",
+      "clock_start": "sepsis_recognition",
+      "target_min": 360,
+      "type": "bundle",
+      "elements": ["repeat lactate if initial elevated", "30 mL/kg crystalloid for hypotension/lactate >=4", "vasopressors for persistent hypotension"],
+      "case_triggered": false,
+      "verify": true
+    },
+    {
+      "id": "STROKE_DOOR_TO_CT",
+      "name": "Door-to-CT",
+      "standard": "AHA/ASA / Joint Commission stroke cert",
+      "clock_start": "patient_arrival",
+      "target_min": 25,
+      "type": "diagnostic_time",
+      "case_triggered": false,
+      "verify": true
+    },
+    {
+      "id": "STROKE_DOOR_TO_NEEDLE",
+      "name": "Door-to-needle (thrombolytic)",
+      "standard": "AHA/ASA / Joint Commission stroke cert",
+      "clock_start": "patient_arrival",
+      "target_min": 60,
+      "type": "intervention_time",
+      "case_triggered": false,
+      "verify": true
+    },
+    {
+      "id": "EFAST_PRIMARY_SURVEY",
+      "name": "EFAST completed during primary/secondary survey",
+      "standard": "DEMO EXPECTATION — not a regulatory clock. Reasonable early-survey window used to demo proactive miss-detection.",
+      "provenance": "NONE — THIS NUMBER IS OURS. We are not aware of any ACS/TQIP/CMS numeric FAST target; ATLS places FAST as an adjunct to the primary survey, which is a phase, not a clock. Asked as CLIN-Q7, unanswered. NEVER call this a standard out loud. If challenged: 'a configurable expectation, not a regulatory clock — the mechanism is the point, not the number.'",
+      "open_question": "CLIN-Q7",
+      "clock_start": "trauma_activation",
+      "target_min": 10,
+      "type": "demo_expectation",
+      "case_triggered": true,
+      "regulatory": false,
+      "verify": true,
+      "demo_note": "SCRIPT 1 (the live demo, ~3:45) performs FAST at 1:50 — this arm is SATISFIED and never fires, so nothing on stage rests on this number. Only SCRIPT 2's T+10:00 pop does. The live proactive beat is the vitals-freshness arm, which needs no external standard at all."
+    },
+    {
+      "id": "CRITICAL_CARE_TIME",
+      "name": "Critical care time (first 30-74 min)",
+      "standard": "CPT 99291",
+      "type": "billable_time",
+      "min_qualifying_min": 30,
+      "case_triggered": true,
+      "reimbursement_link": "Documented critical care time >= 30 min supports CC-TIME (99291).",
+      "verify": true
+    }
+  ]
+}

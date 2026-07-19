@@ -1,0 +1,324 @@
+{
+  "_meta": {
+    "purpose": "Decision lattice with pruning for TRAUMA_ACTIVATION_CRITERIA. Replaces the flat string arrays in accreditation_measures.json -> criteria with walkable, prunable data. The walker is code; every mechanism, criterion and subcategory is a ROW. New mechanisms = new rows, not new code.",
+    "status": "PROPOSAL — pending clinician sign-off (Damian Mosher, ER MD) + coder review. NOT signed off. See ../CLINICIAN_SIGNOFF_ADDENDUM.md.",
+    "replaces": "accreditation_measures.json -> TRAUMA_ACTIVATION_CRITERIA.criteria (the three flat string arrays)",
+    "synthetic_only": true,
+    "verify_owner": "damian",
+    "scope_note": "DATA IS DELIBERATELY NARROW, and the cutoff is CUMULATIVE CASE COVERAGE — not phrase frequency, not importance. Pick the mechanism families that cover ~78% of cases; their verbiage comes along for the ride. Skip crocodile bites -> skip crocodile-bite vocabulary. The case list IS the vocabulary list.",
+    "coverage": {
+      "claim": "Falls, motor vehicle traffic, firearm, and cut/pierce account for ~78% of US trauma registry cases.",
+      "source": "ACS National Trauma Data Bank Annual Report 2016 (admission year 2015; N=861,888; 747 facilities). Last edition — ACS retired the annual reports in 2016; TQP successors are participant-gated. Cite bibliographically, NOT by hyperlink (ACS no longer hosts the PDF).",
+      "corroboration": "~78% independently in three cohorts: 78.49% (NTDB 2016) · 74.52% (Tomas, Inj Prev 2023, NTDB 2012-2019, N=5,630,461) · 78.3% (Alfieri, NTDB 2019-21, ISS>15). 4-point spread.",
+      "families_built": { "MECH_FALL": 44.18, "MECH_MVC": 25.97, "cumulative": 70.15 },
+      "families_added_7_17": { "MECH_PENETRATING": 8.34, "_of": "Firearm 4.21 + Cut/pierce 4.13 — two NTDB mechanisms, one ACS criterion", "cumulative": 78.49 },
+      "🔴_say_registry_cases_never_activations": "STRUCTURAL, not a literature gap. NTDB 2016 contains ZERO instances of 'activation'. The NTDS element HIGHESTACTIVATION is binary, HOSPITAL-DEFINED, and only entered the research file in 2021 — a national mechanism-by-activation distribution is NOT COMPUTABLE. Single-center data proves why: blunt share among full activations runs 44.5% (Ben Taub) to 91.5% (Fakhry, 36 centers); full-activation RATE varies 3.3%-54.1% because each hospital sets its own top tier. If asked about activations, the honest answer is that the national data element does not support the question.",
+      "do_not_add_auto_vs_ped": "Double-counts — MVT is an E-code umbrella already containing pedestrian. See MECH_AUTO_VS_PED.",
+      "directional_only": "Restricting to ISS>15 (closer to an activated population) drops falls 44.18 -> 35.0 and roughly DOUBLES firearm 4.21 -> 9.2. Category definitions differ between sources, so never compare the numbers directly — but it is a real argument that MECH_PENETRATING matters MORE for the sick population we actually serve than the all-registry table suggests."
+    },
+    "design_source": "fixtures/RECORDING_PACKET.md BUILD NOTE (mechanism-scoped number matching) + BUILD_SPEC.md 'DEMO AUDIO PATH'"
+  },
+
+  "measure_id": "TRAUMA_ACTIVATION_CRITERIA",
+  "qualification_rule": "any_one_of",
+
+  "walker": {
+    "_comment": "The whole algorithm, as a contract. ~40 lines to implement. The tap-tap-tap cascade is EMERGENT — it is this loop re-running after each answer, not a scripted sequence.",
+    "steps": [
+      "1. ENTER: a family is entered when its enter_when lexicon matches. Multiple families may be entered.",
+      "2. PRUNE resolved: drop any node whose affirm OR negate already matched in the transcript. (Heard = never ask.)",
+      "3. PRUNE excluded: drop every node in a family listed in an entered family's excludes_families.",
+      "4. PRUNE blocked: drop any node whose depends_on is not yet resolved.",
+      "5. PRUNE immaterial: drop any node where material() is false. See materiality below.",
+      "6. RANK: sort survivors by info_gain desc, then by id for determinism.",
+      "7. RENDER: exactly ONE node — the top. Never N prompts.",
+      "8. On answer (or any new transcript evidence): goto 1. If a node survives, the SAME prompt surface updates (the cascade). If none survives, the prompt clears itself."
+    ],
+    "materiality": {
+      "_comment": "Two arms. An OR, not an AND. See OBLIGATIONS_MODEL.md section 3 — a qualification-only rule prunes the demo's opening beat, because SBP 88 is heard at [0:05] and the ejection prompt lands at [0:12].",
+      "qualification": "node.qualifies_alone === true AND fee_qualified === false",
+      "documentation": "node.registry_required === true",
+      "material": "qualification || documentation",
+      "safety": "NOT SUPPORTED — deliberately. The tool prompts about the record, never about the care. See OBLIGATIONS_MODEL.md section 3."
+    },
+    "hard_invariant": "A prompt is a pure render of state, never an event. Recompute from the FULL evidence set on every transcript update BEFORE consulting the renderer. Nothing schedules a prompt; clocks only mutate material()."
+  },
+
+  "families": [
+    {
+      "id": "MECH_MVC",
+      "axis": "mechanism",
+      "shape": "lattice",
+      "label": "Motor vehicle collision",
+      "enter_when": {
+        "any_of": [
+          "mvc", "mva", "motor vehicle collision", "motor vehicle accident",
+          "auto crash", "car crash", "car accident", "high-speed mvc", "high speed mvc",
+          "unrestrained driver", "restrained driver", "unrestrained passenger",
+          "thrown from the car", "thrown from the vehicle", "rollover"
+        ]
+      },
+      "excludes_families": ["MECH_FALL"],
+      "exclusion_rationale": "A distance heard under MVC is a THROW distance, never a fall height. MVC + ejected + any distance resolves to ejection; the distance is irrelevant. Never traverse MECH_FALL while MECH_MVC is entered. This is why BUILD_SPEC's corrected prompt is 'Was the patient ejected?' and NOT 'fall or ejection?' — and why SPLICE_NOTES.md:70 can trim 'that's not a fall' as answering a question nobody asks.",
+      "modifiers": {
+        "distance": {
+          "role": "irrelevant",
+          "applies_to_criterion": false,
+          "note": "Captured for the record; contributes to NO criterion under this family. This single field is the 'a bare number must never trigger a criterion' rule, expressed as data."
+        }
+      },
+      "nodes": [
+        {
+          "id": "MVC_EJECTED",
+          "ask": "Was the patient ejected?",
+          "prompt": "MVC confirmed. Heard \"{distance}\" — ejection not captured. Was the patient ejected?",
+          "prompt_fallback": "MVC confirmed — ejection not captured. Was the patient ejected?",
+          "prompt_subline_documentation": "Activation already qualifies ({qualifying_criterion}). Mechanism is required for the registry.",
+          "prompt_subline_qualification": "Ejection would qualify the activation fee.",
+          "_subline_note": "Which subline renders depends on ADDENDUM Q1 (does a prehospital EMS-reported SBP satisfy the ED criterion?). The walker picks it from material() at render time — do not hard-code either one.",
+          "info_gain": 3,
+          "criterion": "ejection",
+          "qualifies_alone": true,
+          "registry_required": true,
+          "depends_on": [],
+          "affirm": ["ejected", "ejection", "thrown from the car", "thrown from the vehicle", "partial ejection", "came out of the car", "went through the windshield"],
+          "negate": ["not ejected", "no ejection", "stayed in the car", "still in the vehicle", "found in the driver's seat", "still belted", "still restrained"],
+          "on_negate": { "unlock": ["MVC_INTRUSION_EXTRICATION", "MVC_DEATH_SAME_COMPARTMENT"] }
+        },
+        {
+          "id": "MVC_INTRUSION_EXTRICATION",
+          "ask": "Intrusion or extrication?",
+          "prompt": "MVC, no ejection. High-risk crash features not captured — intrusion or prolonged extrication?",
+          "info_gain": 2,
+          "criterion": "high-risk auto crash (intrusion, extrication)",
+          "qualifies_alone": true,
+          "registry_required": true,
+          "depends_on": ["MVC_EJECTED"],
+          "affirm": ["intrusion", "cabin intrusion", "passenger compartment intrusion", "extrication", "prolonged extrication", "had to cut him out", "jaws of life"],
+          "negate": ["no intrusion", "self-extricated", "walked out of the car", "got himself out", "minor damage"]
+        },
+        {
+          "id": "MVC_DEATH_SAME_COMPARTMENT",
+          "ask": "Death in the same compartment?",
+          "prompt": "MVC — was there a death in the same compartment?",
+          "info_gain": 2,
+          "criterion": "death in same compartment",
+          "qualifies_alone": true,
+          "registry_required": true,
+          "depends_on": ["MVC_EJECTED"],
+          "affirm": ["death in the same compartment", "fatality in the vehicle", "passenger died", "died on scene", "other occupant killed"],
+          "negate": ["no fatalities", "everyone else walked away", "no one else in the car", "sole occupant"]
+        },
+        {
+          "id": "MVC_RESTRAINT",
+          "ask": "Restrained?",
+          "prompt": "MVC — restraint status not captured. Was the patient restrained?",
+          "info_gain": 1,
+          "criterion": null,
+          "qualifies_alone": false,
+          "registry_required": true,
+          "_note": "Qualifies NOTHING alone — restraint status is not an ACS criterion. It is registry-required, so it is documentation-material only. Included precisely to exercise the two-armed materiality rule: this node must NEVER produce a qualification prompt, and must be prunable independently of MVC_EJECTED. In the demo it is pruned at [0:00] ('unrestrained driver' is in the activation call).",
+          "depends_on": [],
+          "affirm": ["unrestrained", "not wearing a seatbelt", "no seatbelt", "restrained", "belted", "wearing his seatbelt", "seatbelt sign"],
+          "negate": []
+        }
+      ]
+    },
+
+    {
+      "id": "MECH_FALL",
+      "axis": "mechanism",
+      "shape": "lattice",
+      "label": "Fall",
+      "enter_when": {
+        "any_of": ["fall", "fell", "jumped from", "fell from", "found down from", "ground-level fall", "fall from height"]
+      },
+      "enter_guard": {
+        "not_preceded_by_negation": true,
+        "note": "MANDATORY. 'that's not a fall' appears TWICE per script (RECORDING_PACKET.md:111,113) and 'logging ejection, not a fall' once. Without negation-scoping, the demo's own disambiguation beat enters MECH_FALL and asks about fall height on an MVC patient — on stage, immediately after a human just said the opposite. See collision_corpus.jsonl class 'negation'."
+      },
+      "excludes_families": ["MECH_MVC"],
+      "modifiers": {
+        "distance": {
+          "role": "qualifier",
+          "applies_to_criterion": true,
+          "criterion_node": "FALL_HEIGHT",
+          "threshold": 20,
+          "unit": "ft",
+          "operator": ">",
+          "adult_only": true,
+          "note": "Same 'distance' modifier as MECH_MVC, opposite role. THIS ASYMMETRY IS THE ENTIRE RULE — 'fall'+>20ft qualifies, 'fall'+<=20ft explicitly does NOT, 'MVC'+any distance is irrelevant. Two data rows, no code."
+        }
+      },
+      "nodes": [
+        {
+          "id": "FALL_HEIGHT",
+          "ask": "How far was the fall?",
+          "prompt": "Fall confirmed — height not captured. Over twenty feet?",
+          "prompt_with_orphan_distance": "Fall confirmed. Heard \"{distance}\" — is that the fall height?",
+          "info_gain": 3,
+          "criterion": "fall > 20 ft (adult)",
+          "qualifies_alone": true,
+          "registry_required": true,
+          "depends_on": [],
+          "affirm": [],
+          "negate": [],
+          "resolved_by_modifier": "distance",
+          "_note": "Resolved by the distance MODIFIER, not by a lexicon hit — this is the one node whose answer is a number. affirm/negate are empty ON PURPOSE. Evaluate: distance > 20 ft -> criterion met; distance <= 20 ft -> criterion NOT met (a short fall is a real, correct, NEGATIVE answer — it resolves the node to not_applicable, it does not leave it missing); no distance -> ambiguous -> prompt.",
+          "evaluate": {
+            "criterion_met_when": "distance_ft > 20",
+            "criterion_not_met_when": "distance_ft <= 20",
+            "ambiguous_when": "distance_ft == null"
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "MECH_PENETRATING",
+      "axis": "mechanism",
+      "shape": "lattice",
+      "label": "Penetrating trauma (firearm / cut-pierce)",
+      "_coverage": "Serves TWO NTDB registry mechanisms in ONE family: Firearm 4.21% + Cut/pierce 4.13% = 8.34% of US trauma registry cases (ACS NTDB Annual Report 2016, admission year 2015, N=861,888). Takes built coverage 70.15% -> 78.49%. See AGENT_LINEUP.md.",
+      "_why_one_family": "Because the registry taxonomy and the criterion taxonomy DO NOT ALIGN, and the model has to hold both. NTDB counts firearm and cut/pierce as separate mechanisms. The ACS activation criterion does not care about the weapon at all — it cares about penetration and SITE. So: `weapon` is a registry-only modifier (documentation-material), `site` is the qualifier (qualification-material). Same two-armed materiality as MVC_EJECTED. Splitting this into MECH_GSW and MECH_STAB would duplicate the site node to satisfy a distinction the criterion doesn't make.",
+      "enter_when": {
+        "any_of": ["gsw", "gunshot", "gunshot wound", "shot", "shot in the", "stabbed", "stab wound", "stabbing", "knife wound", "penetrating", "impaled", "impalement"]
+      },
+      "enter_guard": {
+        "not_preceded_by_negation": true,
+        "note": "Same guard as MECH_FALL. 'no penetrating injury' and 'he wasn't shot' are negations — a survey that rules penetrating trauma OUT must not enter the family."
+      },
+      "excludes_families": [],
+      "_no_exclusions": "Deliberate. Penetrating and blunt genuinely co-occur (shot, then crashed the car). Unlike MVC/fall, these are not mutually exclusive — so no excludes_families. The data says so; the walker needs no special case.",
+      "modifiers": {
+        "weapon": {
+          "role": "registry_only",
+          "applies_to_criterion": false,
+          "values": {
+            "firearm": ["gsw", "gunshot", "shot"],
+            "cut_pierce": ["stabbed", "stab", "knife", "blade", "impaled"]
+          },
+          "note": "Documentation-material, NEVER qualification-material. It is asked for the RECORD (NTDB mechanism coding), never for the money — the criterion is weapon-blind. Exactly the arm that saves the ejection prompt (OBLIGATIONS_MODEL.md section 3)."
+        },
+        "site": {
+          "role": "qualifier",
+          "applies_to_criterion": true,
+          "criterion_node": "PEN_SITE",
+          "kind": "categorical",
+          "boundary": "proximal to elbow / knee",
+          "qualifying": ["head", "face", "neck", "chest", "torso", "abdomen", "belly", "back", "flank", "groin", "shoulder", "axilla", "thigh", "upper arm", "proximal"],
+          "non_qualifying": ["forearm", "wrist", "hand", "finger", "lower leg", "calf", "ankle", "foot", "toe", "distal"],
+          "note": "THE THIRD INSTANCE OF ONE RULE SHAPE, and the proof the model generalizes: `distance` under FALL = NUMERIC qualifier (>20 ft). `distance` under MVC = IRRELEVANT. `site` under PENETRATING = CATEGORICAL qualifier. Same field, three roles, zero code. A bare 'stabbed' qualifies nothing — the site scopes it, exactly as the mechanism scopes a bare '20 feet'."
+        }
+      },
+      "nodes": [
+        {
+          "id": "PEN_SITE",
+          "ask": "Where?",
+          "prompt": "Penetrating injury captured — site not documented. Head, neck, torso, or proximal extremity?",
+          "prompt_with_weapon": "{weapon} confirmed — site not captured. Head, neck, torso, or proximal extremity?",
+          "info_gain": 3,
+          "criterion": "penetrating injury head/neck/torso/proximal extremity",
+          "criterion_axis": "anatomic",
+          "_cross_axis": "The MECHANISM (gsw/stab) enters the family, but the criterion it satisfies is ANATOMIC — ACS files penetrating injury under anatomic, not mechanism. Cross-axis links are legal and already used: PHYS_AIRWAY derives from an obligation rather than a value. Resolves the ANAT_PENETRATING stub.",
+          "qualifies_alone": true,
+          "registry_required": true,
+          "depends_on": [],
+          "affirm": [],
+          "negate": [],
+          "resolved_by_modifier": "site",
+          "evaluate": {
+            "criterion_met_when": "site in modifiers.site.qualifying",
+            "criterion_not_met_when": "site in modifiers.site.non_qualifying",
+            "ambiguous_when": "site == null"
+          },
+          "_note": "affirm/negate empty ON PURPOSE — resolved by the site MODIFIER, exactly as FALL_HEIGHT is resolved by distance. 'GSW to the forearm' is a RESOLVED NEGATIVE (not_applicable), not a gap: the criterion is genuinely not met and the node must never re-ask. Same as a <=20 ft fall."
+        }
+      ]
+    },
+
+    {
+      "id": "MECH_AUTO_VS_PED",
+      "axis": "mechanism",
+      "shape": "lattice",
+      "label": "Auto vs. pedestrian / bicycle",
+      "🔴_coverage_warning": "DO NOT ADD THIS FAMILY TO THE COVERAGE ARITHMETIC — IT DOUBLE-COUNTS. In NTDB's E-code framework (CDC/MMWR 46:1-30), 'Motor Vehicle Traffic' (25.97%) is an UMBRELLA that already contains Occupant, Motorcyclist, Pedal cyclist AND Pedestrian. Auto-vs-ped is already inside MECH_MVC's 25.97%. This remains a valid LATTICE family — it just cannot enter the sum. (The NTDB 'Pedestrian, other' row at 0.33% is NON-TRAFFIC and is not auto-vs-ped.)",
+      "_stub": "ROADMAP ROW — proves the taxonomy extends by DATA. Not exercised by the demo case. Left node-less deliberately; filling it in is a JSON edit, not a code change.",
+      "enter_when": { "any_of": ["auto versus pedestrian", "auto vs pedestrian", "pedestrian struck", "struck by a car", "cyclist struck", "auto versus bike"] },
+      "excludes_families": ["MECH_FALL"],
+      "modifiers": {
+        "distance": { "role": "irrelevant", "applies_to_criterion": false, "note": "A thrown distance. Same rule as MVC." },
+        "speed": { "role": "qualifier", "applies_to_criterion": true, "threshold": 20, "unit": "mph", "operator": ">", "note": "ACS: thrown, run over, or > 20 mph." }
+      },
+      "nodes": []
+    },
+
+    {
+      "id": "ANAT_FLAT",
+      "axis": "anatomic",
+      "shape": "flat",
+      "label": "Anatomic criteria (flat lexicon)",
+      "_shape_note": "Anatomic criteria are MOSTLY flat presence checks — no walk, no subcategory. Listed here so all three axes live in one file and the walker has one input shape. Two anatomic criteria are genuinely lattice-shaped and are stubbed below.",
+      "enter_when": { "always": true },
+      "nodes": [
+        { "id": "ANAT_FLAIL_CHEST",    "criterion": "flail chest",                          "qualifies_alone": true, "registry_required": true, "info_gain": 0, "affirm": ["flail chest", "flail segment"], "negate": [] },
+        { "id": "ANAT_AMPUTATION",     "criterion": "amputation proximal to wrist/ankle",   "qualifies_alone": true, "registry_required": true, "info_gain": 0, "affirm": ["amputation", "traumatic amputation", "amputated"], "negate": [] },
+        { "id": "ANAT_PELVIC_FX",      "criterion": "pelvic fracture",                      "qualifies_alone": true, "registry_required": true, "info_gain": 0, "affirm": ["pelvic fracture", "pelvic binder", "unstable pelvis", "unstable to the spring", "open book pelvis"], "negate": ["pelvis is stable"], "_note": "Satisfied in v2 at T+7:45 by the pelvic binder — a captured-but-NOT-charged event that still feeds fee qualification. Good demo of capture != bill." },
+        { "id": "ANAT_SKULL_FX",       "criterion": "open/depressed skull fracture",        "qualifies_alone": true, "registry_required": true, "info_gain": 0, "affirm": ["open skull fracture", "depressed skull fracture", "depressed fracture"], "negate": [] },
+        { "id": "ANAT_PARALYSIS",      "criterion": "paralysis",                            "qualifies_alone": true, "registry_required": true, "info_gain": 0, "affirm": ["paralysis", "paralyzed", "no sensation below", "can't move his legs"], "negate": ["sensation intact", "moving all four", "sensation intact in both legs"], "_note": "negate is load-bearing: v2 T+8:30 says 'sensation intact in both legs'. Also collides with the RSI paralytic — 'paralyzed' at T+3:15 means rocuronium, NOT spinal cord injury. See collision_corpus.jsonl COL-016." },
+        { "id": "ANAT_PENETRATING",    "criterion": "penetrating injury head/neck/torso/proximal extremity", "qualifies_alone": true, "registry_required": true, "info_gain": 2, "shape": "delegated", "delegates_to": "MECH_PENETRATING.PEN_SITE", "affirm": [], "negate": [], "_resolved": "STUB RESOLVED 7/17 — was 'ROADMAP: needs a SITE axis'. Now lives in the MECH_PENETRATING family, whose `site` modifier is exactly that axis. Evaluate via PEN_SITE; do not duplicate the logic here. Confirms the roadmap note: it WAS one extra axis and it WAS the same walker — 8.34% of registry coverage for zero code." },
+        { "id": "ANAT_LONG_BONE_FX",   "criterion": "2+ proximal long-bone fractures",      "qualifies_alone": true, "registry_required": true, "info_gain": 2, "shape": "lattice_stub", "affirm": [], "negate": [], "_stub": "ROADMAP: needs COUNT x PROXIMAL axes. v2 has ONE (open femur) -> does not qualify. Modeling it as flat lexicon would fire on the single femur and fabricate a criterion — which is exactly the failure mode this whole file exists to prevent." }
+      ]
+    },
+
+    {
+      "id": "PHYS_PREDICATES",
+      "axis": "physiologic",
+      "shape": "predicate",
+      "label": "Physiologic criteria (value predicates)",
+      "_shape_note": "PHYSIOLOGIC CRITERIA ARE NEVER PROMPTED AND NEVER WALKED. They are pure predicates over the values-heard stream — you read a BP, you do not ask 'is the systolic under 90?'. They auto-satisfy the instant a qualifying value is heard. The ONLY prompt this axis can produce is the vitals-freshness watch (a STALE value), which is an obligation on the value, not on the criterion. Included here so the three axes share one file; the walker skips shape=predicate entirely.",
+      "enter_when": { "always": true },
+      "nodes": [
+        { "id": "PHYS_SBP",     "criterion": "SBP < 90 mmHg",                  "qualifies_alone": true, "registry_required": false, "predicate": "values.SBP < 90", "source_field": "BP.systolic", "_note": "SATISFIED AT [0:05] BY THE EMS HANDOFF (88/54) — seven seconds before the ejection prompt lands at [0:12]. This single row is the materiality trap in OBLIGATIONS_MODEL.md section 3. Whether it may qualify at all is ADDENDUM Q1: prehospital vs ED-measured." },
+        { "id": "PHYS_GCS",     "criterion": "GCS < 9 or acute deterioration", "qualifies_alone": true, "registry_required": false, "predicate": "values.GCS < 9 || values.GCS.delta_negative >= 4", "_note": "Tri-state input: total ('GCS thirteen') | components ('eyes to pain, incomprehensible, withdraws') | not_applicable ('not assessable — sedated and paralyzed', T+3:15). The third is NOT missing. See OBLIGATIONS_MODEL.md section 2." },
+        { "id": "PHYS_RR",      "criterion": "RR < 10 or > 29",                "qualifies_alone": true, "registry_required": false, "predicate": "values.RR < 10 || values.RR > 29" },
+        { "id": "PHYS_AIRWAY",  "criterion": "need for definitive airway",     "qualifies_alone": true, "registry_required": false, "predicate": "obligations['OBL-AWY-ETI-CONFIRM'].state === 'satisfied'", "_note": "Derived from another obligation, not from a value. Cross-references are legal and this is the demo's example." },
+        { "id": "PHYS_BLOOD",   "criterion": "requiring blood on arrival",     "qualifies_alone": true, "registry_required": false, "predicate": "NEEDS-CLINICIAN", "_note": "ADDENDUM Q2 — MTP starts at T+1:05. Does that count as 'on arrival'? The criterion is timing-scoped and the window is undefined. NOT GUESSED." }
+      ]
+    }
+  ],
+
+  "orphan_modifier_policy": {
+    "_comment": "The 'bare distance, no mechanism captured' case from the RECORDING_PACKET BUILD NOTE. NOTE: this is NOT the demo's case — the demo hears 'high-speed MVC' in the activation call at [0:00], so MECH_MVC IS entered and the distance is an irrelevant modifier under it. The remaining unknown is ejection. That is exactly why BUILD_SPEC's corrected prompt is 'Was the patient ejected?' and not 'fall or ejection?'. This policy covers the harder case where the mechanism never lands at all.",
+    "distance": {
+      "when": "a distance is heard and NO mechanism family is entered",
+      "state": "ambiguous",
+      "action": "prompt_for_family",
+      "prompt": "Heard \"{distance}\" — mechanism not captured. Fall, MVC, or something else?",
+      "never": [
+        "Do not infer a family from the number.",
+        "Do not let the number alone satisfy any criterion.",
+        "Do not default to fall because 20 ft is a fall threshold — the threshold is a property of the FALL family, not of the number."
+      ]
+    }
+  },
+
+  "rule_table": {
+    "_comment": "The RECORDING_PACKET BUILD NOTE table, restated as the assertions this file must satisfy. These are the acceptance tests for the walker.",
+    "cases": [
+      { "heard": "fall + height > 20 ft",          "resolves_to": "criterion: fall > 20 ft (adult)", "prompt": false },
+      { "heard": "fall + height <= 20 ft",         "resolves_to": "no criterion (short fall)",       "prompt": false, "_note": "A resolved NEGATIVE, not a gap. Do not re-ask." },
+      { "heard": "MVC + ejected + any distance",   "resolves_to": "criterion: ejection",             "prompt": false, "_note": "Distance irrelevant. Never a fall." },
+      { "heard": "MVC + distance, no ejection",    "resolves_to": "ambiguous -> MVC_EJECTED",        "prompt": true,  "_note": "THE DEMO CASE. Prompt: 'Was the patient ejected?' — NOT 'fall or ejection?'" },
+      { "heard": "bare distance, no mechanism",    "resolves_to": "ambiguous -> orphan_modifier_policy", "prompt": true },
+      { "heard": "'that's not a fall'",            "resolves_to": "MECH_FALL NOT entered",           "prompt": false, "_note": "enter_guard.not_preceded_by_negation. Fires twice per script." },
+
+      { "heard": "GSW + 'to the chest'",           "resolves_to": "criterion: penetrating head/neck/torso/proximal extremity", "prompt": false, "_note": "site qualifies. weapon=firearm recorded for the registry, contributes nothing to qualification." },
+      { "heard": "'stabbed in the forearm'",       "resolves_to": "no criterion (distal)",           "prompt": false, "_note": "A RESOLVED NEGATIVE, not a gap. Distal to the elbow. Do not re-ask. Same shape as a <=20 ft fall." },
+      { "heard": "'GSW' with no site",             "resolves_to": "ambiguous -> PEN_SITE",           "prompt": true,  "_note": "Prompt: 'Head, neck, torso, or proximal extremity?' A bare 'shot' qualifies nothing — the SITE scopes it, exactly as the mechanism scopes a bare '20 feet'." },
+      { "heard": "'stabbed' + 'shoulder'",         "resolves_to": "criterion met (proximal)",        "prompt": false },
+      { "heard": "'no penetrating injury'",        "resolves_to": "MECH_PENETRATING NOT entered",    "prompt": false, "_note": "enter_guard. A survey ruling penetrating trauma OUT must not enter the family." },
+      { "heard": "GSW to chest + MVC",             "resolves_to": "BOTH families entered",           "prompt": false, "_note": "Penetrating and blunt genuinely co-occur (shot, then crashed). MECH_PENETRATING has no excludes_families — unlike MVC/fall, these are not mutually exclusive." }
+    ]
+  }
+}

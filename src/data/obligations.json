@@ -1,0 +1,372 @@
+{
+  "_meta": {
+    "purpose": "The obligations ledger catalog. One row per thing that matters. Each row holds a STATE (satisfied|missing|ambiguous|...) and a prompt is nothing but an open, material obligation rendered. Replaces the prose `requires` strings in charges.json with machine-checkable predicates.",
+    "status": "PROPOSAL — pending clinician sign-off (Damian Mosher, ER MD) + coder/CDI review. NOT signed off. See ../CLINICIAN_SIGNOFF_ADDENDUM.md.",
+    "relates_to": "charges.json (requires -> obligations), accreditation_measures.json (measures -> obligations), activation_lattice.json (ambiguous -> lattice walk)",
+    "synthetic_only": true,
+    "verify_owner": "damian",
+    "read_first": "../OBLIGATIONS_MODEL.md"
+  },
+
+  "state_machine": {
+    "states": {
+      "dormant":        { "prompts": false, "reports": false, "note": "in the catalog; trigger has not fired" },
+      "satisfied":      { "prompts": false, "reports": "billed / measure met", "note": "HARD INVARIANT: never prompts. Not a one-way latch — a contradiction de-satisfies it back to ambiguous." },
+      "missing":        { "prompts": "if material", "reports": "page2_gap if terminal", "note": "triggered, zero evidence, we know exactly what is absent" },
+      "ambiguous":      { "prompts": "if material", "reports": "page2_gap if terminal", "note": "partial or conflicting evidence; a lattice walk can resolve it" },
+      "not_applicable": { "prompts": false, "reports": "noted, not a gap", "note": "ACTIVELY EXCLUDED by other evidence. Distinct from missing. e.g. GCS on a paralyzed patient." },
+      "unresolved":     { "prompts": false, "reports": "page2_named_gap", "terminal": true, "note": "LEGITIMATE TERMINAL STATE. Was open + material at disposition; never answered. Not a failure — the honest outcome." }
+    },
+    "transitions": [
+      "dormant   -> missing|ambiguous   : trigger matched",
+      "missing   -> ambiguous           : partial evidence arrives",
+      "ambiguous -> satisfied           : remaining evidence arrives (prompt retracts itself — the 'app heard the resolution' beat)",
+      "*         -> not_applicable      : an exclusion predicate matches",
+      "satisfied -> ambiguous           : contradiction (satisfied is NOT permanent)",
+      "missing|ambiguous -> unresolved  : disposition sweep, was material"
+    ],
+    "render_predicate": "render(o) <=> o.state in {missing, ambiguous} AND material(o) AND NOT suppressed(o)",
+    "materiality": {
+      "qualification": "resolving it changes whether money moves",
+      "documentation": "money is settled, but a REQUIRED FIELD OF THE RECORD is absent",
+      "safety": "NOT SUPPORTED — deliberately. See OBLIGATIONS_MODEL.md section 3.",
+      "material": "qualification || documentation",
+      "immaterial_behavior": "held SILENTLY. Never prompted. Still reported as an informational gap if terminal. This is the entire anti-nag mechanism."
+    },
+    "suppression": {
+      "max_prompts": 1,
+      "cooldown_s": 45,
+      "settle_ms": 3000,
+      "settle_note": "Do NOT render a prompt for an obligation whose trigger fired < settle_ms ago. At T+2:25 'Tube is in' and 'EtCO2 waveform present' are one breath apart — without this the app interrupts a sentence to ask for its second half, on stage.",
+      "human_deferred": "a human says 'not now' / 'hold that' -> suppress permanently -> unresolved at disposition. RESPECT THE DECLINE. v2 T+7:00 says 'hold that for now' aloud."
+    }
+  },
+
+  "obligations": [
+    {
+      "id": "OBL-TRM-ACT-068X",
+      "subject": { "kind": "charge", "ref": "TRM-ACT", "rev": "0681", "proposed_split_from": "TRM-ACT" },
+      "label": "Trauma team activation, rev 068x",
+      "trigger": { "any_of": ["trauma activation", "trauma team activation", "level one", "level 1 activation", "level 1 trauma"] },
+      "_stt_aliases": "'level 1 trauma' (audit wl4m5pkw3): the resus is called as 'level 1 trauma coming in', not the formal 'trauma activation' — none of the four fire, dropping the $2450 activation charge. Clean vs the cross-bay must_not_fire (which carries 'level one', not 'level 1 trauma').",
+      "requires": { "all_of": [
+        { "id": "criteria_met",     "predicate": "lattice.TRAUMA_ACTIVATION_CRITERIA.any_criterion_satisfied === true" },
+        { "id": "documented",       "affirm": ["trauma activation", "level one", "level 1"] },
+        { "id": "team_responded",   "affirm": ["surgery to bedside", "trauma surgeon is here", "surgeon at bedside", "they're coming down"] },
+        { "id": "prehospital_notification", "affirm": ["eta", "ems", "medic", "inter-hospital transfer", "transferred from"],
+          "_NEW": "FOURTH CONDITION, currently absent from charges.json. CMS MLN MM5438: 'Only patients for whom there has been prehospital notification ... OR ARE DELIVERED BY INTER-HOSPITAL TRANSFERS ... can be billed a trauma activation charge.' A walk-in activated in the department does NOT qualify. Note the OR — this is not EMS-notification-only; I had that wrong before checking. Satisfied in the demo by 'ETA now' + EMS arrival.",
+          "verify": "NEEDS-CODER [Q9]" }
+      ]},
+      "facility_precondition": {
+        "predicate": "facility.trauma_designation in ['state_designated','locally_designated','ACS_verified']",
+        "_note": "068x is restricted to designated/verified trauma centers. Not case-level — a config constant. Included because the flat chargemaster has no way to say it. Assume true for the demo."
+      },
+      "material_for": ["qualification"],
+      "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap", "dollar_impact": 2450.00 },
+      "_demo_expectation": "SATISFIED. Bills 0681. See OBL-TRM-ACT-G0390 for the half that does NOT bill."
+    },
+
+    {
+      "id": "OBL-TRM-ACT-G0390",
+      "subject": { "kind": "charge", "ref": "TRM-ACT", "hcpcs": "G0390", "proposed_split_from": "TRM-ACT" },
+      "label": "Trauma response team activation associated with critical care (G0390)",
+      "trigger": { "ref": "OBL-TRM-ACT-068X", "when": "satisfied" },
+      "requires": { "all_of": [
+        { "id": "rev_068x_billable", "predicate": "obligations['OBL-TRM-ACT-068X'].state === 'satisfied'" },
+        { "id": "cc_99291_billable", "predicate": "obligations['OBL-CC-TIME-30MIN'].state === 'satisfied'",
+          "_CHARGE_TO_CHARGE": "G0390 REQUIRES 99291. Hard CMS OCE edit — a dependency between two charges, which is a shape charges.json cannot express at all. CMS MLN MM5438 verbatim: 'The OCE will edit to ensure that G0390 appears with revenue code 68x on the same date of service as CPT code 99291.' And: 'Hospitals that provide less than 30 minutes of critical care ... may report a charge under 68x, BUT THEY MAY NOT REPORT HCPCS CODE G0390.'" }
+      ]},
+      "material_for": ["qualification"],
+      "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap" },
+      "_demo_expectation": "UNRESOLVED / NOT BILLED. CC time is ~8 min in-bay (less, excluding separately-reportable procedures) -> 99291 not billable -> G0390 not billable. rev 0681 still bills. THIS IS THE HEADLINE FINDING — see OBLIGATIONS_MODEL.md section 8-C.",
+      "_gap_text": "G0390 not billed — requires >=30 min critical care (CPT 99291); 8 min documented in-bay. Revenue code 0681 billed. If critical care continued in the OR, reconcile.",
+      "verify": "NEEDS-CODER [Q9]"
+    },
+
+    {
+      "id": "OBL-CC-TIME-30MIN",
+      "subject": { "kind": "charge", "ref": "CC-TIME", "cpt": "99291" },
+      "label": "Critical care time >= 30 min",
+      "trigger": { "any_of": ["critical care time", "starting critical care", "critical care"] },
+      "requires": { "all_of": [
+        { "id": "duration_30", "predicate": "clocks.critical_care.accrued_min >= 30", "derived": true,
+          "_note": "DERIVED, NEVER HEARD. Nobody says '31 minutes'. This is the only obligation whose evidence is a clock, not a phrase." }
+      ]},
+      "clock": {
+        "start_on": ["critical care time", "starting critical care"],
+        "stop_on": ["disposition", "patient departing"],
+        "pause_during": ["OBL-PRC-CHT-PLACEMENT", "OBL-PRC-CLINE-TIP", "OBL-PRC-FAST-DOC"],
+        "_pause_note": "Per ACEP, the critical-care clock PAUSES during separately reportable procedures. Chest tube (T+3:40), central line (T+4:40) and FAST (T+10:40) all pause it. Real accrued time is well under the 8:20 wall-clock."
+      },
+      "material_for": ["qualification"],
+      "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap", "dollar_impact": 325.00, "flag": "endpoint_not_noted", "_flag_rule": "GENERAL RULE (Mike, 2026-07-18): any timed/clocked obligation whose completion endpoint falls past the captured recording window is flagged 'endpoint not noted' on the code sheet — NOT shown as a decline/drop. Applies here (30-min clock vs ~3:45 recording) and to the coupled OBL-TRM-ACT-G0390." },
+      "_demo_expectation": "UNRESOLVED / NOT BILLED. Starts T+2:40, patient departs T+11:00 = ~8:20 wall-clock, less with pauses. Gate says >=30.",
+      "_gap_text": "⚑ Endpoint not noted — critical care time was started, but its endpoint falls past the captured encounter window (CPT 99291 needs >=30 min continuous; the recording ends first). Not a decline: flagged for endpoint capture and reconciliation against total documented critical care.",
+      "⚠️_fixture_conflict": "expected_extraction.json (v1, a 3:45 case) fires CC-TIME as documented:true at T+3:15 — billing 99291 on ~35 seconds, contradicting its own gate. NOT EDITED (instructed; it is the hand-validated golden fixture). Flagging only. Note it is '11/11 validated' — so validation did not check gates against elapsed time.",
+      "_why_this_is_good": "Declining $325 with a citation, and saying where the rest of the money went, is worth more on stage than a green checkmark."
+    },
+
+    {
+      "id": "OBL-AWY-ETI-CONFIRM",
+      "subject": { "kind": "charge", "ref": "AWY-ETI", "cpt": "31500" },
+      "label": "Airway confirmation (EtCO2 + bilateral breath sounds)",
+      "trigger": { "any_of": ["intubating", "tube is in", "rapid sequence", "rsi"] },
+      "requires": { "all_of": [
+        { "id": "etco2",    "affirm": ["etco2 waveform", "et co2", "et co two", "e t co2", "co two waveform", "end-tidal co2", "end tidal co2", "end tidal waveform", "end tidal", "capnography", "capnography waveform", "sustained waveform"],
+          "_stt_note": "C7 — HIGHEST-STAKES TOKEN IN THE BUILD. STT mangles 'EtCO2' ('ET CO two', 'et cetera'). If it drops, AWY-ETI never releases and the flagship gate FAILS SILENTLY IN THE SAFE-LOOKING DIRECTION — a held charge reads as the gate working. Nobody catches it on stage. The variant list is the mitigation; 'end tidal' is the most survivable." },
+        { "id": "bilat_bs", "affirm": ["bilateral breath sounds", "breath sounds are equal", "equal breath sounds", "breath sounds bilaterally", "equal chest expansion"] }
+      ]},
+      "_why_all_of": "Today this is ONE PROSE STRING: 'airway confirmation (EtCO2 + bilateral BS)'. A string has two states. So 'EtCO2 heard, breath sounds not' collapses to missing and the app asks for BOTH — including the half it just heard. THAT VIOLATES THE INVARIANT. As all_of over two atoms it is ambiguous, and the prompt narrows to the half actually absent. Prose `requires` cannot express the invariant. Highest-leverage change in the file.",
+      "material_for": ["qualification"],
+      "prompt": "Intubation captured — confirmation not heard. EtCO2 waveform and bilateral breath sounds?",
+      "prompt_partial_etco2": "EtCO2 confirmed — bilateral breath sounds not captured. Equal bilaterally?",
+      "prompt_partial_bs": "Bilateral breath sounds confirmed — EtCO2 waveform not captured. Waveform present?",
+      "re_raise": { "on": ["new_evidence", "contradiction"], "max_prompts": 1, "cooldown_s": 45, "settle_ms": 3000 },
+      "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap", "dollar_impact": 850.00,
+                    "gap_text": "Intubation performed; airway confirmation not documented. CPT 31500 not billed." },
+      "satisfies_measure": "AIRWAY_SECURED_CONFIRMED",
+      "_demo_expectation": "SATISFIED at T+2:25 — both halves in one breath. settle_ms is what stops the app prompting mid-sentence."
+    },
+
+    {
+      "id": "OBL-PRC-CHT-PLACEMENT",
+      "subject": { "kind": "charge", "ref": "PRC-CHT", "cpt": "32551" },
+      "label": "Chest tube placement documented",
+      "trigger": { "any_of": ["chest tube", "tube thoracostomy", "decompressing the left", "decompressing the right"] },
+      "trigger_guard": {
+        "not_future_tense": true,
+        "_C2": "LIVE COLLISION. v2 T+1:05 / SCRIPT 2 [1:05]: 'he's GOING TO NEED a chest tube' — fires PRC-CHT ~2.5 min before the tube exists. End state survives (held->released at T+4:15) but the board shows a procedure that has not happened and the held duration inflates 35s -> 2m35s. See collision_corpus.jsonl COL-004."
+      },
+      "requires": { "any_of": [
+        { "id": "ics",       "affirm": ["intercostal space", "fifth intercostal", "5th ics", "fourth intercostal"] },
+        { "id": "return",    "affirm": ["return of", "mils of blood", "ml of blood", "immediate return", "output"] },
+        { "id": "post_bs",   "affirm": ["breath sounds are improved", "breath sounds improved", "re-expanded"] }
+      ], "min_satisfied": 1 },
+      "_any_of_note": "1-of-3 proposed. What actually counts as 'placement documented' is a clinical/coding call, NOT MINE. -> ADDENDUM Q6. Modeled as any_of so the clinician (Damian) can set min_satisfied without a code change.",
+      "material_for": ["qualification"],
+      "prompt": "Chest tube captured — placement not documented. Space, return, or post-placement breath sounds?",
+      "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap", "dollar_impact": 1200.00 },
+      "_demo_expectation": "TRANSIENT HOLD -> RELEASE. Held at T+3:40, released T+4:15 ('5th ICS, 300 mL return, breath sounds improved' = 3-of-3). The gate working live, on stage.",
+      "verify": "NEEDS-CLINICIAN [Q6]"
+    },
+
+    {
+      "id": "OBL-PRC-FAST-DOC",
+      "subject": { "kind": "charge", "ref": "PRC-FAST", "cpt": "76705" },
+      "label": "FAST: stored image + written interpretation",
+      "trigger": { "any_of": ["fast exam", "efast", "doing a fast", "focused assessment", "e fast"] },
+      "_stt_aliases": "'e fast' (audit wl4m5pkw3): the acronym is spoken letter-E + 'fast', so Deepgram renders TWO tokens 'e fast', which the single-token 'efast' misses. Deliberately NOT bare 'fast' — it whole-token matches the negated/homophone must_not_fire lines ('never got the fast', 'fast, ED pace').",
+      "trigger_guard": {
+        "not_negated": true,
+        "min_tokens": 2,
+        "_C4_C5": "TWO LIVE COLLISIONS. (C4 negation) T+10:15 'we NEVER GOT the FAST' and T+10:00 'EFAST ... I DON'T HAVE ONE captured' — a single-token `FAST` trigger SATISFIES THE EFAST MEASURE FROM A SENTENCE THAT SAYS THE OPPOSITE, 25s before the exam. Two-token 'fast exam' survives BY LUCK OF PHRASING, not by design. (C5 homophone) The packet's own delivery note is 'Fast. ED pace, brisk' and its pronunciation guide says 'FAST — say it like the word fast'. A single-token trigger is UNUSABLE. See COL-008/009/010."
+      },
+      "requires": { "all_of": [
+        { "id": "image_stored",   "affirm": ["image", "images", "saved", "stored", "recorded"], "_note": "may not be spoken aloud at all — likely unresolved in the demo. That is honest." },
+        { "id": "interpretation", "affirm": ["positive fluid", "free fluid", "morrison's pouch", "negative fast", "no free fluid"] }
+      ]},
+      "_replaces": "charges.json requires: ['exam performed'] — TAUTOLOGICAL. It restates the trigger, so the obligation is ALWAYS trivially satisfied and models nothing. CPT ultrasound guidelines require a stored image + a separate signed written report (high confidence, ACEP/AIUM; exact AMA verbatim unverified).",
+      "material_for": ["qualification"],
+      "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap", "dollar_impact": 275.00 },
+      "satisfies_measure": "EFAST_PRIMARY_SURVEY",
+      "_demo_expectation": "interpretation SATISFIED at T+10:40 ('positive fluid in Morrison's pouch'). image_stored likely UNRESOLVED — nobody says it aloud. Recommend gating on interpretation only for the demo and reporting image_stored as an informational gap. -> ADDENDUM Q5.",
+      "verify": "NEEDS-CODER [Q5]"
+    },
+
+    {
+      "id": "OBL-IV-ACC2-LARGEBORE",
+      "subject": { "kind": "charge", "ref": "IV-ACC2", "cpt": "36000" },
+      "label": "IV access: two sites, large-bore",
+      "trigger": { "any_of": ["iv access", "large-bore", "two lines", "peripheral iv", "16 gauge", "sixteen gauge", "large bores", "two large bores"] },
+      "_stt_aliases": "'16 gauge' / 'sixteen gauge' added from the real demo audio (7_18 / 0718(2).MP3): the placement line is 'left AC and right forearm, 16 gauge' — none of the original four fire on it, so the $95 charge silently dropped even though the atoms (count_2, gauge) satisfy. Deliberately NOT adding 'both lines': collision_corpus COL-002 ('Both lines are in — sixteen and sixteen') is a readback that must_not_fire IV-ACC2, and this obligation has NO idempotency_key, so 'both lines' would double-bill the $95. '16 gauge' fires once on placement and is absent from the 'sixteen and sixteen' readback (whole-token match).",
+      "requires": { "all_of": [
+        { "id": "count_2", "predicate": "values.iv_sites >= 2", "affirm": ["times two", "x2", "two", "both"] },
+        { "id": "gauge",   "predicate": "values.iv_gauge <= 16", "affirm": ["sixteen-gauge", "16 gauge", "fourteen-gauge", "14 gauge", "large-bore"] }
+      ]},
+      "_why_safe_to_add": "NOT a clinical rule — the charge's OWN NAME says 'IV Access, Large-Bore x2'. The gate is the line's name. Script satisfies both: 'left AC and right forearm, sixteen-gauge'.",
+      "⚠️_bundling": "36000 IS BUNDLED INTO 99291 and not separately reportable (ACEP Critical Care FAQ: bundled list includes 'vascular access procedures (36000, 36410, 36415, 36591, 36600)'). This is a MUTUAL-EXCLUSION between charges, a shape charges.json cannot express. NOTE: harmless in this demo — CC-TIME does not reach 30 min (OBL-CC-TIME-30MIN), so 99291 does not fire and IV-ACC2 stands. It would bite the moment a case DOES bill critical care. -> NEEDS-CODER.",
+      "material_for": ["qualification"],
+      "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap", "dollar_impact": 95.00 },
+      "_demo_expectation": "SATISFIED at T+0:35."
+    },
+
+    {
+      "id": "OBL-LAB-TCX-UNITS",
+      "subject": { "kind": "charge", "ref": "LAB-TCX", "cpt": "86921", "unit_basis": "per_unit" },
+      "label": "Type & crossmatch — unit count and technique",
+      "trigger": { "any_of": ["type and cross", "type and crossmatch", "crossmatch", "typing cross", "typed and crossed"] },
+      "_stt_aliases": "'typing cross' added from the real demo audio: STT heard 'type and cross' as 'sending a TYPING CROSS for two' — without it the whole T&C obligation stays dormant on the real clip.",
+      "idempotency_key": "encounter:type_and_cross",
+      "_C6": "READBACK DOUBLE-FIRE. 'type and cross' x2 (order + RN readback), 'massive transfusion' x3. The script CALLS READBACKS A FEATURE ('redundant provenance'). For a PER-UNIT charge, redundant provenance is TRIPLE BILLING. SCRIPT 1 was hardened (RECORDING_PACKET.md:270 — the Second RN says 'both lines are in', deliberately NOT 'IV access'). SCRIPT 2 WAS NOT. The idempotency_key is the fix: N utterances resolve ONE obligation, because the obligation is keyed by identity, not by utterance.",
+      "requires": { "all_of": [
+        { "id": "unit_count", "predicate": "values.prbc_units != null", "affirm": ["two units", "2 units"] },
+        { "id": "technique",  "predicate": "NEEDS-CODER", "_note": "86921 is specifically the INCUBATION technique. 86920 (immediate spin), 86922 (antiglobulin), 86923 (electronic) are DIFFERENT CODES. Mapping every 'type and cross' -> 86921 is an over-simplification." }
+      ]},
+      "_emergency_release_correction": "I ASSUMED uncrossmatched O-neg generates no 86921, AND I WAS WRONG — checked. Per AABB: 'In all emergency situations, standard compatibility testing for units issued uncrossmatched is initiated and completed without delay' — a retrospective crossmatch IS performed and IS billable. The issue is QUANTITY and TECHNIQUE, not 'no charge'. Recorded because the wrong version is the intuitive one and someone will re-derive it.",
+      "material_for": ["qualification"],
+      "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap", "dollar_impact": 180.00 },
+      "_demo_expectation": "DEMO-SAFE MINIMUM: keep qty at the initial 2 units; let MTP units land UNRESOLVED on page 2 rather than guessing. Cheaper than modeling it properly today and consistent with everything else here.",
+      "verify": "NEEDS-CLINICIAN [Q3]"
+    },
+
+    {
+      "id": "OBL-PRC-CLINE-TIP",
+      "subject": { "kind": "charge", "ref": "PRC-CLINE", "cpt": "36556" },
+      "label": "Central line: tip position documented",
+      "trigger": { "any_of": ["central line", "central venous access", "femoral cordis", "cordis", "introducer", "chordis"] },
+      "_stt_aliases": "'chordis' (audit wl4m5pkw3): Deepgram frequently mishears 'cordis' as 'chordis'. Idempotency_key already dedups, so no double-bill risk.",
+      "idempotency_key": "encounter:central_line",
+      "_C6": "'central line' (T+4:40) + 'central venous access' (readback, same beat) = TWO triggers, ONE event. Same idempotency fix.",
+      "requires": { "all_of": [
+        { "id": "tip_position", "affirm": ["iliac", "ivc", "inferior vena cava", "svc", "superior vena cava", "right atrium"],
+          "_note": "ACEP quoting CPT: 'The distal tip of the catheter must terminate in the subclavian, brachiocephalic (innominate), or iliac veins; the superior or inferior vena cava; or the right atrium.' A femoral line QUALIFIES BY TIP (iliac/IVC) — the femoral vein itself is NOT on the tip list. Script never says where the tip is." }
+      ]},
+      "preconditions": { "age_gte": 5, "_note": "36556 is age >=5 (36555 is under 5). Patient is 34. Satisfied." },
+      "material_for": ["qualification"],
+      "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap", "dollar_impact": 610.00 },
+      "_demo_expectation": "Likely UNRESOLVED — 'right femoral cordis, large-bore' never states tip position. Another honest page-2 gap. -> ADDENDUM Q7.",
+      "verify": "NEEDS-CLINICIAN [Q7]"
+    },
+
+    {
+      "id": "OBL-SPLINT-SITE",
+      "subject": { "kind": "charge", "ref": "SPLINT", "cpt": "PENDING — SITE SELECTS THE CODE" },
+      "label": "Splint: site determines the CPT",
+      "trigger": { "any_of": ["splint", "extremity splint", "splinting", "splinted"] },
+      "_stt_aliases": "'splinted' (audit wl4m5pkw3): the femur splint is narrated past-tense ('thigh's splinted') while the team moves on; the fused token 'splinted' is missed by 'splint'/'splinting', dropping the $140 charge. Absent from the must_not_fire.",
+      "🔴_wrong_cpt": "charges.json maps SPLINT -> 29105 = 'Application of long ARM splint (shoulder to hand)' — an UPPER extremity code (high confidence, AAPC). The script splints an open RIGHT FEMUR (v2 T+8:00: 'Right thigh — open femur deformity, bone visible. [Extremity splint] applied.'). Correct code is 29505 = 'Application of long LEG splint (thigh to ankle or toes)'. expected_extraction.json encodes the wrong one too: {code:SPLINT, cpt:29105, for_event:'extremity splint R femur'} — NOT EDITED (instructed).",
+      "_why_not_just_a_swap": "THERE IS NO GENERIC 'EXTREMITY SPLINT' CPT. The site IS the code. So SPLINT CANNOT BE ONE ROW — it needs a site->code map with site as a requires gate. No site heard -> ambiguous -> cannot pick a code. This is the lattice shape applied to a CHARGE, not to a criterion — same walker, different rows.",
+      "requires": { "all_of": [
+        { "id": "site", "predicate": "values.splint_site != null" }
+      ]},
+      "code_map": [
+        { "when": "site in ['thigh','femur','leg','knee','tibia','ankle']", "cpt": "29505", "label": "long leg splint (thigh to ankle or toes)" },
+        { "when": "site in ['shoulder','humerus','arm','elbow']",          "cpt": "29105", "label": "long arm splint (shoulder to hand)" },
+        { "when": "site in ['forearm','wrist']",                          "cpt": "29125", "label": "short arm splint" },
+        { "when": "site in ['lower leg','calf','foot']",                  "cpt": "29515", "label": "short leg splint" }
+      ],
+      "material_for": ["qualification"],
+      "prompt": "Splint captured — site not documented. Which extremity?",
+      "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap", "dollar_impact": 140.00 },
+      "_demo_expectation": "SATISFIED -> 29505. 'Right thigh' is spoken in the same breath as the splint.",
+      "verify": "NEEDS-CLINICIAN [Q8]"
+    },
+
+    {
+      "id": "OBL-WOUND-CX-AXES",
+      "subject": { "kind": "charge", "ref": "WOUND-CX", "cpt": "PENDING — 3 AXES SELECT THE CODE" },
+      "label": "Wound repair: body area x tier x length",
+      "trigger": { "any_of": ["complex wound repair", "layered closure", "wound repair", "laceration repair", "lac repair", "deep sutures", "two layer", "closing the lac"] },
+      "_stt_aliases": "'lac repair', 'deep sutures', 'two layer', 'closing the lac' (Mike, 2026-07-18): a lac gets narrated as 'closing the scalp lac, two layer, deep sutures', never the formal 'wound repair' — fire the lac procedure when the suturing is actually heard. Wound-specific phrasings only (a line/tube 'secured with a suture' must NOT bill this), and all absent from the deferral must_not_fire, so the 'hold that for now -> unresolved' demo beat is preserved.",
+      "trigger_guard": {
+        "not_future_tense": true,
+        "not_deferred": true,
+        "_C3": "LIVE COLLISION. v2 T+7:00: \"it'll NEED a complex wound repair — HOLD THAT FOR NOW\" — fires WOUND-CX on a repair explicitly NOT DONE. Also: 'hold that for now' is a HUMAN DEFERRAL spoken aloud -> suppression.human_deferred -> the correct response is SILENCE plus a page-2 gap. The persistent-hold beat still lands, but for the wrong reason. See COL-006/007."
+      },
+      "🔴_wrong_cpt": "THREE problems in one row. (1) charges.json maps WOUND-CX -> 12052 = 'Repair, intermediate, wounds of FACE, ears, eyelids, nose, lips and/or mucous membranes; 2.6-5.0 cm' (high, AAPC). The charge is named 'Complex Wound Repair, SCALP'. Scalp intermediate is the 12031-12037 series. (2) The intended code is almost certainly 12032 = 'Repair, intermediate, wounds of SCALP, axillae, trunk and/or extremities; 2.6 cm to 7.5 cm' — and that 2.6-7.5 cm range is EXACTLY what trauma_callout_script_v2.md:188 cites while attributing it to 12052 (real range 2.6-5.0). The note took 12032's range and wrote 12052's number: 12032 <-> 12052 is a digit transposition. (3) The NAME says 'Complex'; 12052/12032 are INTERMEDIATE. Complex scalp repair is 13120-13122 (13121 = 2.6-7.5 cm). Name and code disagree about the TIER, and the tier is a CLINICAL determination — not mine to make. -> ADDENDUM Q4.",
+      "requires": { "all_of": [
+        { "id": "body_area", "affirm": ["scalp", "right parietal", "parietal", "occipital", "forehead"], "_state": "SATISFIED in v2 — 'scalp laceration to the right parietal'" },
+        { "id": "tier",      "affirm": ["layered closure", "layered", "two layer", "deep sutures", "single layer", "simple closure", "complex repair", "undermining", "debridement"], "_state": "NEVER SPOKEN in the demo -> missing (deferred). If a real repair is narrated ('two layer, deep sutures'), tier now registers as layered/intermediate." },
+        { "id": "length",    "predicate": "values.laceration_cm != null", "_state": "NEVER SPOKEN -> missing" }
+      ]},
+      "code_map": [
+        { "when": "area=scalp AND tier=intermediate AND 2.6 <= length <= 7.5", "cpt": "12032" },
+        { "when": "area=scalp AND tier=intermediate AND length <= 2.5",       "cpt": "12031" },
+        { "when": "area=scalp AND tier=complex AND 2.6 <= length <= 7.5",     "cpt": "13121" },
+        { "when": "area=scalp AND tier=complex AND 1.1 <= length <= 2.5",     "cpt": "13120" }
+      ],
+      "material_for": ["qualification"],
+      "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap", "dollar_impact": 310.00,
+                    "gap_text": "Scalp repair intended, not performed before OR transfer. Repair tier (intermediate vs complex) and length not documented — cannot select a code. Not billed." },
+      "_demo_expectation": "PERSISTENT HOLD -> UNRESOLVED. v2 holds this for ONE missing field (length). Actually TWO OF THREE AXES are unknown: the script gives area, never tier, never length. You cannot select between 12032 and 13121 without both. So the charge correctly stays held, and unresolved at disposition because the patient goes to the OR and nobody answers. THE V2 SCRIPT DESIGNED THE RIGHT BEAT; this model just names why. It is the canonical demo of `unresolved` as a legitimate terminal state.",
+      "verify": "NEEDS-CLINICIAN [Q4]"
+    },
+
+    {
+      "id": "OBL-IMG-EKG-INTERP",
+      "subject": { "kind": "charge", "ref": "IMG-EKG", "cpt": "93000" },
+      "label": "12-lead EKG: interpretation and report",
+      "trigger": { "any_of": ["twelve-lead", "12-lead", "twelve lead", "ekg", "ecg", "twelve leads"] },
+      "_stt_aliases": "'twelve leads' (audit wl4m5pkw3): the read-back possessive 'the twelve-lead's back' strips to the plural token 'leads', breaking the singular whole-token match. Idempotency_key dedups.",
+      "trigger_guard": { "not_future_tense": true, "_C2": "'GET a twelve-lead' (order, T+6:00) vs '12-lead EKG — DONE' (performed, T+6:00 readback). Order != performed. Same idempotency key resolves both to one charge." },
+      "idempotency_key": "encounter:ekg",
+      "requires": { "all_of": [
+        { "id": "interpretation", "affirm": ["sinus tach", "sinus tachycardia", "no st changes", "st elevation", "normal sinus", "rate of"] }
+      ]},
+      "_why_safe_to_add": "DESCRIPTOR-DERIVED, not a clinical rule. 93000's descriptor IS 'Electrocardiogram, routine ECG with at least 12 leads; WITH INTERPRETATION AND REPORT' (high, AAPC/CMS). The interpretation is inside the code. Script satisfies it: 'Sinus tach, no ST changes'.",
+      "code_map": [
+        { "when": "tracing AND interpretation", "cpt": "93000", "label": "global" },
+        { "when": "tracing only",              "cpt": "93005", "label": "tracing only, without interpretation and report" },
+        { "when": "interpretation only",       "cpt": "93010", "label": "interpretation and report only" }
+      ],
+      "_code_map_note": "A mini-lattice: who did the tracing vs who interpreted selects the code. Same walker. Roadmap for the demo — 93000 is right here.",
+      "material_for": ["qualification"],
+      "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap", "dollar_impact": 60.00 },
+      "_demo_expectation": "SATISFIED at T+6:00."
+    },
+
+    {
+      "id": "OBL-VITALS-FRESHNESS",
+      "subject": { "kind": "value_stream", "ref": "vitals" },
+      "label": "Vitals freshness watch",
+      "_not_a_measure": "This is NOT a measure and NOT a charge. It is an obligation on the VALUE STREAM — the score inputs go stale. Modeled here so the ledger owns all three prompt types uniformly.",
+      "trigger": { "predicate": "resuscitation_active === true" },
+      "requires": { "all_of": [
+        { "id": "fresh_hr", "predicate": "now - values.HR.heard_at < 90s" },
+        { "id": "fresh_bp", "predicate": "now - values.BP.heard_at < 90s" }
+      ]},
+      "re_raise": { "on": ["staleness"], "staleness_s": 90, "max_prompts": 1, "cooldown_s": 60 },
+      "_staleness_note": "The timer flips material(). IT DOES NOT FIRE A PROMPT. Watches VITALS specifically — non-vital speech does not reset it.",
+      "material_for": ["documentation"],
+      "prompt": "No fresh BP or heart rate in ~90 seconds. Reassess, or missed callout?",
+      "terminal": { "at": "disposition", "if_open": "not_applicable" },
+      "_demo_expectation": "FIRES at T+3:10 (last vitals T+1:40) -> RESOLVED by the fresh set at T+3:15. The prompt RETRACTS ITSELF — that is the 'app heard the resolution' beat, emergent, not scripted."
+    },
+
+    {
+      "id": "OBL-EFAST-DEADLINE",
+      "subject": { "kind": "measure", "ref": "EFAST_PRIMARY_SURVEY" },
+      "label": "EFAST expected by 10 min",
+      "trigger": { "any_of": ["trauma activation"] },
+      "requires": { "all_of": [
+        { "id": "fast_performed", "predicate": "obligations['OBL-PRC-FAST-DOC'].state === 'satisfied'" }
+      ]},
+      "re_raise": { "on": ["deadline"], "deadline_min": 10, "clock_start": "trauma_activation", "max_prompts": 1 },
+      "_deadline_note": "The clock flips material() at 10 min. IT DOES NOT FIRE A PROMPT. Before 10 min the obligation is `missing` but IMMATERIAL — held silently. That is why nothing pops at T+2:00, and it is a state transition rather than a scheduled toast.",
+      "material_for": ["documentation"],
+      "prompt": "EFAST expected by the ten-minute mark — none captured. Missed capture, or not yet performed?",
+      "_prompt_tone": "It ASKS. It never accuses. regulatory:false — framed as an expectation, not a mandate.",
+      "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap" },
+      "_demo_expectation": "FIRES at T+10:00 -> SATISFIED LATE at T+10:40. Note the resolution at T+10:15 ('we never got the FAST') is a NEGATED mention — see OBL-PRC-FAST-DOC.trigger_guard. Getting that wrong satisfies the measure 25s early from a sentence saying the opposite."
+    },
+
+    {
+      "id": "OBL-REG-DEMOGRAPHICS",
+      "subject": { "kind": "registry_field", "ref": "demographics" },
+      "label": "Trauma registry demographics: age, sex, weight",
+      "_not_a_charge": "NOT a charge and NOT a measure. These are fields on the RECORD — they never move money, which is precisely `documentation` materiality (OBLIGATIONS_MODEL.md:76). Modeled here so the demographics bar READS THE LEDGER like every other surface, instead of becoming a second source of truth beside it.",
+      "trigger": { "predicate": "resuscitation_active === true" },
+      "requires": { "all_of": [
+        { "id": "age",    "predicate": "values.Age != null" },
+        { "id": "sex",    "predicate": "values.Sex != null" },
+        { "id": "weight", "predicate": "values.Weight != null" }
+      ]},
+      "material_for": [],
+      "_why_immaterial": "DELIBERATELY EMPTY. Per state_machine, `missing` prompts only `if material` — so this row CHARTS AND REPORTS BUT NEVER PROMPTS. Two prompt beats are scripted (disambiguation T+0:15, vitals-freshness T+3:10); a third competing for the prompt surface in a ~3:45 demo is noise, not signal. If a weight prompt is ever wanted, it is a one-field change: add \"documentation\" here. That is the whole lever.",
+      "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap" },
+      "_demo_expectation": "age + sex SATISFY at T+0:00 off the medic's first line — \"Thirty-four-year-old male\" (RECORDING_PACKET.md:103). The scream buries the words AFTER it (\"thrown from the car\"), not it, so this survives on audio already cut. weight stays MISSING: no weight is spoken in either script. The bar fills 2 of 3 in the opening seconds and the empty chip reports as a page-2 registry gap — an honest absence, rendered.",
+      "_scope_adult": "ADULT ONLY. Age is charted, not banded — nothing branches on it. The age-dependent scores (MGAP, GAP) are compute:null in trauma_scores.json pending clinician coding, and peds would fork the lattice (cf. FALL_HEIGHT's 'fall > 20 ft (adult)'). Roadmap, not gameday.",
+      "_scope_sex": "Sex is charted because the registry wants the field, NOT because anything computes on it. GCS, Shock Index and RTS are sex-independent — there is no per-sex branch anywhere in this system, by design and by the literature. Pregnancy is the one place sex genuinely changes trauma management, and it is its own documentation field, not a scoring fork."
+    }
+  ],
+
+  "not_charged_but_captured": {
+    "_comment": "Faithfully capture clinical events with no billable line. Shows the system does not over-bill — a trust story worth 10 seconds on stage.",
+    "items": [
+      { "event": "pelvic binder", "why": "no demo chargemaster line; ALSO an anatomic activation criterion feeding fee qualification (ANAT_PELVIC_FX)" },
+      { "event": "TXA / tranexamic acid", "why": "no code in the demo chargemaster. Roadmap: add a TXA line." },
+      { "event": "permissive hypotension", "why": "a strategy, not a procedure" },
+      { "event": "log roll", "why": "part of the secondary survey" }
+    ]
+  }
+}
