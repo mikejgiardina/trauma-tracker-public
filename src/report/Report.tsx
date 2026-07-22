@@ -2,6 +2,7 @@ import { createPortal } from 'react-dom';
 import { FileText, Printer, X } from 'lucide-react';
 import type { ChargeRuntime, EngineState, ExtractedItem } from '../types.ts';
 import type { ReportAgents } from './reportAgents.ts';
+import type { NarrativeLine } from './useNarrative.ts';
 import { money, tRel } from '../ui/format.ts';
 import './print.css';
 
@@ -13,11 +14,13 @@ function amount(c: ChargeRuntime): string {
   return c.status === 'billed' ? money(c.price) : c.status === 'declined' || c.status === 'unresolved' ? '$0' : '—';
 }
 
-export function Report({ engine, items, agents, agentsLoading, onClose }: {
+export function Report({ engine, items, agents, agentsLoading, noteLines, noteComposing, onClose }: {
   engine: EngineState;
   items: ExtractedItem[];
   agents?: ReportAgents | null;
   agentsLoading?: boolean;
+  noteLines?: NarrativeLine[];
+  noteComposing?: boolean;
   onClose: () => void;
 }) {
   const events = items.filter((i) => i.type === 'event');
@@ -222,39 +225,27 @@ export function Report({ engine, items, agents, agentsLoading, onClose }: {
         </div>
 
         {agentsLoading && (
-          <p className="mb-3 text-xs text-slate-500">Generating nurse's note, hot debrief, and exposure review…</p>
+          <p className="mb-3 text-xs text-slate-500">Generating hot debrief and exposure review…</p>
         )}
 
-        {/* Nurse's note */}
+        {/* Nurse's note — composed incrementally, one sentence per captured event */}
         <div className="mb-5">
           <h2 className="mb-1 font-semibold text-slate-800">Nurse's note</h2>
-          {agents?.note ? (
-            <>
-              <ol className="space-y-1 text-xs text-slate-700">
-                {agents.note.page1Narrative.map((c, i) => (
-                  <li key={i}>
-                    <span className="mr-1 font-mono text-[10px] text-slate-500">{tRel(c.t)}</span>
-                    {c.text}
-                  </li>
-                ))}
-              </ol>
-              {agents.note.page1NotCaptured.length > 0 && (
-                <div className="mt-2">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Not captured</div>
-                  <ul className="list-disc pl-4 text-[11px] text-slate-600">
-                    {agents.note.page1NotCaptured.map((g, i) => (
-                      <li key={i}><b>{g.what}</b> — {g.note}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {agents.note.attestation && (
-                <pre className="mt-2 whitespace-pre-wrap font-sans text-[9px] text-slate-500">{agents.note.attestation}</pre>
-              )}
-            </>
-          ) : !agentsLoading ? (
-            <p className="text-[11px] text-slate-400">Unavailable this run.</p>
-          ) : null}
+          {noteLines && noteLines.length > 0 ? (
+            <ol className="space-y-1 text-xs text-slate-700">
+              {noteLines.map((c, i) => (
+                <li key={i}>
+                  <span className="mr-1 font-mono text-[10px] text-slate-500">{c.t_rel}</span>
+                  {c.text}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-[11px] text-slate-400">{noteComposing ? 'Composing…' : 'No narrative captured.'}</p>
+          )}
+          {noteComposing && noteLines && noteLines.length > 0 && (
+            <p className="mt-1 text-[10px] italic text-slate-400">composing…</p>
+          )}
         </div>
 
         {/* Hot debrief */}

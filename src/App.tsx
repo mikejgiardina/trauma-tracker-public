@@ -14,6 +14,7 @@ import { TranscriptPane } from './ui/TranscriptPane.tsx';
 import { Controls } from './ui/Controls.tsx';
 import { Report } from './report/Report.tsx';
 import { runReportAgents, type ReportAgents } from './report/reportAgents.ts';
+import { useNarrative } from './report/useNarrative.ts';
 
 const envMode = (import.meta.env.VITE_DEMO_MODE as string | undefined) === 'live' ? 'live' : 'canned';
 
@@ -30,6 +31,11 @@ export default function App() {
     [state.utterances, state.readings, state.nowSec, dismissed],
   );
 
+  // Nurse's note is composed incrementally — one sentence per captured event, as they
+  // arrive — so it's ready at report time (no big end-of-case call).
+  const eventItems = useMemo(() => state.items.filter((i) => i.type === 'event' && i.label), [state.items]);
+  const narrative = useNarrative(eventItems);
+
   function dismiss(defer: boolean) {
     const p = engine.activePrompt;
     if (!p) return;
@@ -43,10 +49,11 @@ export default function App() {
     setDismissed([]);
     setShowReport(false);
     setAgents(null);
+    narrative.reset();
   }
 
-  // Generate report: open the deliverable, then run the post-report agents
-  // (nurse's note + hot debrief + exposure review) — one call each, best-effort.
+  // Generate report: the nurse's note is already built incrementally (useNarrative);
+  // here we run hot debrief + exposure — selective, compact input, best-effort.
   async function onReport() {
     setShowReport(true);
     setAgents(null);
@@ -103,7 +110,7 @@ export default function App() {
       </div>
 
       {showReport && (
-        <Report engine={engine} items={state.items} agents={agents} agentsLoading={agentsLoading} onClose={() => setShowReport(false)} />
+        <Report engine={engine} items={state.items} agents={agents} agentsLoading={agentsLoading} noteLines={narrative.lines} noteComposing={narrative.composing} onClose={() => setShowReport(false)} />
       )}
     </div>
   );
