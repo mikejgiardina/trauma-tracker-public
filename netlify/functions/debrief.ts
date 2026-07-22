@@ -64,19 +64,10 @@ const EXPOSURE_BADGE_SCHEMA = obj({
     band_rationale: S,
   }),
   critical_incident: obj({ flagged: B, categories: arr(S), rationale: S }),
-  crew: arr(obj({
-    staff_id: S,
-    role: S,
-    this_incident: band,
-    trailing_90d: obj({ incidents: N, high_band: N, note: S }),
-    badge_state: enm('nominal', 'elevated', 'review_window'),
-  })),
-  resources: obj({ framing: S, note: S }),
   leadership: obj({
     aggregate_observations: arr(S),
     questions_worth_asking: arr(S),
     resources_that_exist: arr(S),
-    tips: arr(S),
   }),
 });
 
@@ -130,7 +121,7 @@ const DENIAL_APPEAL_SCHEMA = obj({
 // Each agent's "Output JSON shape" prose is gone — the schema enforces it now.
 const AGENTS: Record<string, { system: string; maxTokens: number; schema: JsonSchema }> = {
   hot_debrief: {
-    maxTokens: 3072,
+    maxTokens: 2048,
     schema: HOT_DEBRIEF_SCHEMA,
     system: `You run the immediate post-resus HOT DEBRIEF for frontline staff — everyone in the bay (nursing,
 trauma/surgery, residents, CST, respiratory, lab, blood bank, XR, case management, social services) and
@@ -150,7 +141,7 @@ ${DOCTRINE}`,
   },
 
   exposure_badge: {
-    maxTokens: 3072,
+    maxTokens: 1536,
     schema: EXPOSURE_BADGE_SCHEMA,
     system: `You produce the EMOTIONAL IMPACT ASSESSMENT (exposure badge) for LEADERSHIP — the aggregate view.
 The metaphor is a radiation dosimeter: it MEASURES dose against a threshold; it never diagnoses, never
