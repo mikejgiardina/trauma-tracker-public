@@ -3,8 +3,16 @@
  *
  * Holds the Anthropic key server-side; the browser never sees it. Turns a transcript
  * window into structured items. Called via /.netlify/functions/claude from the client
- * (and mounted in dev by the vite plugin in vite.config.ts). No SDK — direct REST.
+ * (and mounted in dev by the vite plugin in vite.config.ts).
+ *
+ * Model plumbing routes through callAgent (structured outputs -> guaranteed-parseable
+ * JSON, thinking disabled, retries) — see _shared/callAgent.ts. Cross-cutting doctrine
+ * is single-sourced from _shared/doctrine.ts. Request/response contract unchanged:
+ * POST { transcript } -> { items: ExtractedItem[] }.
  */
+
+import { DOCTRINE } from './_shared/doctrine.ts';
+import { callAgent, type JsonSchema } from './_shared/callAgent.ts';
 
 const EXTRACTOR_SYSTEM = `You extract discrete clinical events, spoken values, and interventions from a live trauma-bay audio transcript. Multiple people are speaking; you do NOT identify who — you catalogue WHAT was said. Synthetic data only; never infer facts not present in the transcript.
 
@@ -17,38 +25,53 @@ Emit three kinds of items:
 
 Do not compute scores. Do not assign charges. Faithful capture only.
 
-Output ONLY JSON of the form:
-{"items":[{"type":"event|value|note","t_rel":"T+MM:SS","label":"string","name":"string|null","value":"string|number|null","unit":"string|null","raw":"verbatim phrase","uncertain":false}]}
-
 Guardrails:
 - Never emit a value the transcript didn't state (no normal-range hallucination).
 - Preserve the verbatim raw phrase.
 - Never infer Age, Sex, or Weight from a voice, a name, or pronouns. Emit them only when stated outright.
-- If nothing extractable, return {"items":[]}.`;
+  Example: "thirty-four-year-old male" → emit a value Sex=male; a room that only says "he" has NOT stated a sex.
+- When a blood pressure is stated ("88 over 54" or "88/54"), emit SEPARATE SBP and DBP values (SBP=88, DBP=54).
+- If nothing extractable, return {"items": []}. For an event or note, leave name "".
+
+${DOCTRINE}
+
+Return the fields defined by the response schema.`;
+
+// Structured-outputs schema (supported subset: object/array/string/number/boolean/enum,
+// additionalProperties:false, required on every object). `value` is a string; the client
+// engine (values.ts) parses numerics — no anyOf needed.
+const EXTRACTOR_SCHEMA: JsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['items'],
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['type', 't_rel', 'label', 'name', 'value', 'unit', 'raw', 'uncertain'],
+        properties: {
+          type: { type: 'string', enum: ['event', 'value', 'note'] },
+          t_rel: { type: 'string' },
+          label: { type: 'string' },
+          name: { type: 'string' },
+          value: { type: 'string' },
+          unit: { type: 'string' },
+          raw: { type: 'string' },
+          uncertain: { type: 'boolean' },
+        },
+      },
+    },
+  },
+};
 
 function json(obj: unknown, status = 200): Response {
   return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } });
 }
 
-/** pull the first JSON object out of a possibly fenced model reply. */
-function parseItems(text: string): unknown[] {
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
-  const raw = fenced ? fenced[1] : text;
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start < 0 || end < 0) return [];
-  try {
-    const parsed = JSON.parse(raw.slice(start, end + 1)) as { items?: unknown[] };
-    return Array.isArray(parsed.items) ? parsed.items : [];
-  } catch {
-    return [];
-  }
-}
-
 export default async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return json({ error: 'ANTHROPIC_API_KEY not set on the server' }, 500);
 
   let transcript = '';
   try {
@@ -58,22 +81,13 @@ export default async (req: Request): Promise<Response> => {
   }
   if (!transcript.trim()) return json({ items: [] });
 
-  const model = process.env.ANTHROPIC_MODEL_EXTRACTOR || 'claude-sonnet-5';
-  const body = {
-    model,
-    max_tokens: 2000,
+  const result = await callAgent<{ items?: unknown[] }>({
     system: EXTRACTOR_SYSTEM,
-    messages: [{ role: 'user', content: `Transcript so far:\n${transcript}\n\nReturn the items JSON for everything extractable, JSON only.` }],
-  };
-
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify(body),
+    user: `Transcript so far:\n${transcript}`,
+    schema: EXTRACTOR_SCHEMA,
+    maxTokens: 2000,
   });
-  if (!r.ok) return json({ error: `anthropic ${r.status}`, detail: await r.text().catch(() => '') }, 502);
 
-  const data = (await r.json()) as { content?: { type: string; text?: string }[] };
-  const text = data.content?.map((c) => c.text ?? '').join('') ?? '{"items":[]}';
-  return json({ items: parseItems(text) });
+  if (!result.ok) return json({ error: result.error }, result.status ?? 502);
+  return json({ items: Array.isArray(result.data.items) ? result.data.items : [] });
 };
