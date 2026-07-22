@@ -18,7 +18,6 @@ import { callAgent, type JsonSchema } from './_shared/callAgent.ts';
 
 // --- schema builders (structured-outputs supported subset only) --------------
 const S: JsonSchema = { type: 'string' };
-const B: JsonSchema = { type: 'boolean' };
 const N: JsonSchema = { type: 'number' };
 const arr = (items: JsonSchema): JsonSchema => ({ type: 'array', items });
 const enm = (...vals: string[]): JsonSchema => ({ type: 'string', enum: vals });
@@ -30,22 +29,14 @@ const obj = (properties: Record<string, JsonSchema>): JsonSchema => ({
 });
 const band = enm('low', 'moderate', 'high');
 
+// Selective + minimal — only what the report renders and only what's debrief-worthy.
 const HOT_DEBRIEF_SCHEMA = obj({
   hot_debrief: obj({
     summary: S,
-    participants_heard: arr(obj({ role: S, evidence_t_rel: S })),
     went_well: arr(obj({ what: S, evidence_t_rel: S })),
     challenges: arr(obj({ what: S, evidence_t_rel: S, framing: S })),
-    system_issues: arr(obj({ what: S, evidence_t_rel: S })),
-    ems_handoff: obj({ mode: enm('ground', 'flight', 'not_heard'), report_received: S, worth_examining: arr(S) }),
     action_points: arr(obj({ point: S, owner_role: S })),
-    closed_loop_quality: obj({
-      orders_with_readback: N,
-      orders_without_readback: arr(obj({ order: S, t_rel: S })),
-      note: S,
-    }),
   }),
-  exposure_handoff: obj({ observed_factors: arr(obj({ factor: S, evidence: S, t_rel: S })) }),
 });
 
 // Minimal shape — exactly what the report renders. Keeps the exposure call fast and
@@ -115,19 +106,14 @@ const AGENTS: Record<string, { system: string; maxTokens: number; schema: JsonSc
   hot_debrief: {
     maxTokens: 2048,
     schema: HOT_DEBRIEF_SCHEMA,
-    system: `You run the immediate post-resus HOT DEBRIEF for frontline staff — everyone in the bay (nursing,
-trauma/surgery, residents, CST, respiratory, lab, blood bank, XR, case management, social services) and
-EMS ground/flight. Standard hot-debrief structure: summarize; things that went well (highs); challenges
-(lows, framed as questions); system issues (equipment/process/resource problems AS VOICED in the room);
-action points as opportunities owned by a ROLE, never a name. This is a debrief, NOT clinical decision
-support: surface patterns, ask questions, never direct care. Blame-free — a challenge belongs to the
-event, not a person. participants_heard lists ONLY roles evidenced in the transcript, never an expected
-roster. Include the EMS handoff review (mode ground|flight|not_heard) grounded in what the room heard;
-if no EMS report appears, mode is not_heard and the other keys STAY with empty values — never drop keys.
-Also emit exposure_handoff.observed_factors — verbatim-evidenced stressor factors (no bands, no
-interpretation; a downstream step assigns bands). An observed factor is something said or done, never an
-inferred feeling: "patient screaming during line placement" qualifies (observed/done); "the RN was
-distressed" does NOT (inferred internal state), even anchored to a real quote.
+    system: `You run the immediate post-resus HOT DEBRIEF. Be SELECTIVE: surface ONLY what is worth passing
+on or remembering — notable process/equipment/resource issues as voiced, deviations from expected care,
+teachable moments, and communication or closed-loop gaps. Routine, successful, by-the-book care is NOT
+debrief-worthy: getting a BP a minute late, a patient in pain, an uneventful line — do not flag these.
+Do NOT summarize the whole case; if a section has nothing worth flagging, return it EMPTY.
+
+Keep the summary to 1-2 sentences. Blame-free: a challenge belongs to the event, not a person, and is
+framed as a question. Roles, never names. Each action point is owned by a ROLE.
 
 ${DOCTRINE}`,
   },
@@ -135,24 +121,21 @@ ${DOCTRINE}`,
   exposure_badge: {
     maxTokens: 900,
     schema: EXPOSURE_BADGE_SCHEMA,
-    system: `You produce the EMOTIONAL IMPACT ASSESSMENT (exposure badge) for LEADERSHIP — the aggregate view.
-The metaphor is a radiation dosimeter: it MEASURES dose against a threshold; it never diagnoses, never
-prescribes. You consume the debrief's observed_factors handoff plus transcript/events and a SYNTHETIC
-staff roster. Categorize each factor on the ladder: mechanism_injury | treatments | patient_demographics
-| patient_actions | staff_moral_injury | context. Moral-injury factors require an OBSERVABLE marker
-(something said aloud); never inferred. An observed factor is something said or done, never an inferred
-feeling: "patient screaming during line placement" qualifies (observed/done); "the RN was distressed"
-does NOT (inferred internal state), even anchored to a real quote. Assign incident_load and
-impact_likelihood as BANDS (low|moderate|high) — never a number. Flag critical_incident using standard
-ICISF/CISM critical-incident categories (classify the EVENT, never a person). Per-crew badges:
-this_incident band, trailing_90d SYNTHETIC HISTORY echoed as given, badge_state
-nominal|elevated|review_window derived from bands only. The badge belongs to the wearer: individual dose
-is the individual's; only the aggregate goes to the program. leadership content is aggregate-only:
-pattern observations, questions worth asking, resources that EXIST (name CISM/peer-support paths; never
-assign them), tips that are never "this person/crew needs X." MEASURE, NEVER PRESCRIBE. Set _disclaimer
-to: "SYNTHETIC. Fictional staff, fabricated history. Not a screening tool, not a diagnostic, not a
-clinical assessment. Exposure measurement only." resources.framing is "These exist. They are yours to
-use or not."
+    system: `You produce the EMOTIONAL-IMPACT REVIEW (exposure badge) for LEADERSHIP — an aggregate dosimeter
+that MEASURES cumulative exposure against a threshold; it never diagnoses and never prescribes.
+
+Be SELECTIVE — this is the whole point. Most trauma care carries NO significant exposure. Flag exposure
+ONLY for genuinely dose-bearing events (CISM / ICISF): pediatric or young-adult death or near-death;
+prolonged, chaotic, or failed resuscitation; mass casualty; violence or assault against staff; grotesque
+or disfiguring injury; a personal/known-patient connection; or a MORAL-INJURY marker stated ALOUD in the
+room. Routine successful trauma care, a patient in pain or cursing, minor injuries, and normal
+vital-sign cadence are NOT exposure-worthy.
+
+If the case carries no significant exposure: incident_load = low, impact_likelihood = low,
+band_rationale states briefly why, and leadership.aggregate_observations is EMPTY. Do NOT summarize the
+event — surface only what a peer-support lead would actually want flagged. Bands are low | moderate |
+high, never a number. Aggregate/pattern only; never name or direct an individual. Set _disclaimer to:
+"SYNTHETIC. Not a screening tool, not a diagnostic, not a clinical assessment. Exposure measurement only."
 
 ${DOCTRINE}`,
   },

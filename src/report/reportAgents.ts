@@ -64,10 +64,15 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return j;
 }
 
+function secTRel(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  return `T+${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+}
+
 export async function runReportAgents(
   items: ExtractedItem[],
   readings: ValueReading[],
-  utterances: Utterance[],
+  _utterances: Utterance[],
   gaps: Gap[],
 ): Promise<ReportAgents> {
   const events = items
@@ -81,7 +86,9 @@ export async function runReportAgents(
     raw: r.raw,
   }));
   const notCaptured = gaps.map((g) => ({ what: g.label, note: g.text }));
-  const transcript = utterances.map((u) => `${u.t_rel} ${u.text}`).join('\n');
+  // Debrief + exposure get the COMPACT event list only (not the raw transcript) and are
+  // told to surface only what's debrief/exposure-worthy — small in, small out, fast.
+  const compactEvents = events.map((e) => ({ t_rel: secTRel(e.t), label: e.label }));
   const caseId = 'SYN-0007';
 
   const errors: string[] = [];
@@ -90,11 +97,11 @@ export async function runReportAgents(
       errors.push(`nurse's note: ${(e as Error).message}`);
       return null;
     }),
-    post<HotDebriefResult>('debrief', { agent: 'hot_debrief', input: { case_id: caseId, transcript, events } }).catch((e) => {
+    post<HotDebriefResult>('debrief', { agent: 'hot_debrief', input: { case_id: caseId, events: compactEvents } }).catch((e) => {
       errors.push(`debrief: ${(e as Error).message}`);
       return null;
     }),
-    post<ExposureResult>('debrief', { agent: 'exposure_badge', input: { case_id: caseId, transcript, events } }).catch((e) => {
+    post<ExposureResult>('debrief', { agent: 'exposure_badge', input: { case_id: caseId, events: compactEvents } }).catch((e) => {
       errors.push(`exposure review: ${(e as Error).message}`);
       return null;
     }),
