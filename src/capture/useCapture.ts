@@ -60,12 +60,14 @@ export function useCapture(initialMode: CaptureMode) {
   const runExtractor = useCallback(async () => {
     if (extracting.current) return;
     const utter = liveUtter.current;
-    if (utter.length === lastExtractLen.current) return;
+    const from = lastExtractLen.current;
+    if (utter.length <= from) return;
     lastExtractLen.current = utter.length;
     extracting.current = true;
     try {
-      const items = await extract(utter);
-      liveItems.current = dedupeItems([...items]);
+      // Fix 1: send only the new window + items already captured; accumulate + dedupe.
+      const newItems = await extract(utter.slice(from), liveItems.current);
+      liveItems.current = dedupeItems([...liveItems.current, ...newItems]);
     } catch (e) {
       setState((s) => ({ ...s, error: e instanceof Error ? e.message : String(e) }));
     } finally {

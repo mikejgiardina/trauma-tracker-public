@@ -16,6 +16,8 @@ import { callAgent, type JsonSchema } from './_shared/callAgent.ts';
 
 const EXTRACTOR_SYSTEM = `You extract discrete clinical events, spoken values, and interventions from a live trauma-bay audio transcript. Multiple people are speaking; you do NOT identify who — you catalogue WHAT was said. Synthetic data only; never infer facts not present in the transcript.
 
+You are given a list of items ALREADY CAPTURED. Emit ONLY new items found in the new transcript window; never re-emit an item already in the provided list.
+
 For each new transcript segment, emit events. Use ONLY what is stated. Mark anything ambiguous as "uncertain": true rather than guessing. Timestamps are relative to activation (T+MM:SS) as spoken by the recorder; if a segment has no explicit time, attach it to the most recent stated time.
 
 Emit three kinds of items:
@@ -73,19 +75,28 @@ function json(obj: unknown, status = 200): Response {
 export default async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
 
-  let transcript = '';
+  let windowText = '';
+  let priorItems: unknown[] = [];
   try {
-    ({ transcript = '' } = (await req.json()) as { transcript?: string });
+    const b = (await req.json()) as { windowText?: string; priorItems?: unknown[] };
+    windowText = b.windowText ?? '';
+    priorItems = Array.isArray(b.priorItems) ? b.priorItems : [];
   } catch {
     return json({ error: 'invalid JSON body' }, 400);
   }
-  if (!transcript.trim()) return json({ items: [] });
+  if (!windowText.trim()) return json({ items: [] });
+
+  // Fix 1 (compute fat): only the new window + a compact list of already-captured items
+  // go over the wire, and the model emits only new items — bounded tokens across a run.
+  const user =
+    `Items ALREADY CAPTURED (do NOT re-emit):\n${priorItems.length ? JSON.stringify(priorItems) : 'none'}\n\n` +
+    `New transcript window:\n${windowText}`;
 
   const result = await callAgent<{ items?: unknown[] }>({
     system: EXTRACTOR_SYSTEM,
-    user: `Transcript so far:\n${transcript}`,
+    user,
     schema: EXTRACTOR_SCHEMA,
-    maxTokens: 2000,
+    maxTokens: 1500,
   });
 
   if (!result.ok) return json({ error: result.error }, result.status ?? 502);

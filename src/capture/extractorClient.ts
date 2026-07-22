@@ -2,8 +2,9 @@
  * Extractor / Scribe client — the ONE live model call (prompts/10_extractor_scribe.md,
  * Sonnet 5, via netlify/functions/claude). Turns transcript into structured items.
  *
- * We send the full transcript-so-far and dedupe returned items by (t_rel|label|raw);
- * for a ~4-minute case this is cheap and avoids delta-boundary double-emits.
+ * Fix 1 (compute fat): send only the NEW window since the last extract plus the
+ * compact list of items already captured; the model emits ONLY new items, so tokens
+ * stay bounded across a run. dedupeItems (below) remains the safety net.
  */
 
 import type { ExtractedItem, Utterance, ValueReading } from '../types.ts';
@@ -14,12 +15,22 @@ interface ExtractResponse {
   items: ExtractedItem[];
 }
 
-export async function extract(utterances: Utterance[]): Promise<ExtractedItem[]> {
-  const transcript = utterances.map((u) => `${u.t_rel} ${u.text}`).join('\n');
+interface PriorItem {
+  kind: ExtractedItem['type'];
+  t_rel: string;
+  text: string;
+}
+
+export async function extract(
+  windowUtterances: Utterance[],
+  priorItems: ExtractedItem[] = [],
+): Promise<ExtractedItem[]> {
+  const windowText = windowUtterances.map((u) => `${u.t_rel} ${u.text}`).join('\n');
+  const prior: PriorItem[] = priorItems.map((i) => ({ kind: i.type, t_rel: i.t_rel, text: i.label }));
   const res = await fetch(CLAUDE_ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ transcript }),
+    body: JSON.stringify({ windowText, priorItems: prior }),
   });
   if (!res.ok) throw new Error(`Extractor ${res.status}: ${await res.text().catch(() => '')}`);
   const json = (await res.json()) as ExtractResponse;
