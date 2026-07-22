@@ -46,6 +46,7 @@ export function useCapture(initialMode: CaptureMode) {
   const durationRef = useRef(cannedDurationSec);
   const tick = useRef<ReturnType<typeof setInterval> | null>(null);
   const mic = useRef<MicCapture | null>(null);
+  const audio = useRef<HTMLAudioElement | null>(null);
   // live/file accumulate here; canned derives from nowSec
   const liveUtter = useRef<Utterance[]>([]);
   const liveItems = useRef<ExtractedItem[]>([]);
@@ -54,6 +55,7 @@ export function useCapture(initialMode: CaptureMode) {
   const lastExtractLen = useRef(0);
 
   const clearTick = () => { if (tick.current) clearInterval(tick.current); tick.current = null; };
+  const stopAudio = useCallback(() => { audio.current?.pause(); audio.current = null; }, []);
 
   const runExtractor = useCallback(async () => {
     if (extracting.current) return;
@@ -75,14 +77,20 @@ export function useCapture(initialMode: CaptureMode) {
     startEpoch.current = Date.now();
     const speed = mode === 'canned' ? replaySpeed() : 1;
     tick.current = setInterval(() => {
-      const elapsed = ((Date.now() - startEpoch.current) / 1000) * speed;
+      // Canned: when the demo audio is playing it IS the clock, so the panels populate
+      // in lockstep with what's heard. Falls back to the wall clock if the audio isn't
+      // playing (autoplay blocked, or ?speed rehearsal).
+      const onAudio = mode === 'canned' && audio.current != null && !audio.current.paused;
+      const elapsed = onAudio
+        ? audio.current!.currentTime
+        : ((Date.now() - startEpoch.current) / 1000) * speed;
       if (mode === 'canned') {
         const nowSec = Math.min(elapsed, durationRef.current);
         const snap = revealCanned(nowSec);
         const utterances = [...snap.utterances, ...injected.current.filter((i) => i.atSec <= nowSec)]
           .sort((a, b) => a.atSec - b.atSec);
         setState((s) => ({ ...s, nowSec, utterances, items: snap.items, readings: snap.readings }));
-        if (nowSec >= durationRef.current) { clearTick(); setState((s) => ({ ...s, status: 'stopped' })); }
+        if (nowSec >= durationRef.current) { clearTick(); stopAudio(); setState((s) => ({ ...s, status: 'stopped' })); }
       } else {
         const nowSec = Math.min(elapsed, durationRef.current || elapsed);
         void runExtractor();
@@ -90,13 +98,21 @@ export function useCapture(initialMode: CaptureMode) {
         setState((s) => ({ ...s, nowSec, utterances: utter, items: liveItems.current, readings: readingsFromItems(liveItems.current) }));
       }
     }, TICK_MS);
-  }, [runExtractor]);
+  }, [runExtractor, stopAudio]);
 
   const start = useCallback(async (mode: CaptureMode) => {
     liveUtter.current = []; liveItems.current = []; injected.current = []; lastExtractLen.current = 0;
     setState((s) => ({ ...s, status: 'running', mode, error: undefined, nowSec: 0, utterances: [], items: [], readings: [] }));
     if (mode === 'canned') {
       durationRef.current = cannedDurationSec;
+      // Play the demo recording OUTWARD through the speakers (Start is a user gesture,
+      // so audible autoplay is allowed) and let it drive the reveal. Skipped on
+      // ?speed≠1 (rehearsal) or if the asset/autoplay fails — then it's a silent replay.
+      if (replaySpeed() === 1) {
+        const el = new Audio('/demo-audio.mp3');
+        audio.current = el;
+        void el.play().catch(() => { audio.current = null; });
+      }
       startClock('canned');
     } else if (mode === 'live') {
       try {
@@ -129,16 +145,18 @@ export function useCapture(initialMode: CaptureMode) {
 
   const stop = useCallback(async () => {
     clearTick();
+    stopAudio();
     if (mic.current) { await mic.current.stop(); await runExtractor(); mic.current = null; }
     setState((s) => ({ ...s, status: 'stopped' }));
-  }, [runExtractor]);
+  }, [runExtractor, stopAudio]);
 
   const reset = useCallback(() => {
     clearTick();
+    stopAudio();
     void mic.current?.stop(); mic.current = null;
     liveUtter.current = []; liveItems.current = []; injected.current = []; lastExtractLen.current = 0;
     setState({ status: 'idle', mode: initialMode, nowSec: 0, utterances: [], readings: [], items: [] });
-  }, [initialMode]);
+  }, [initialMode, stopAudio]);
 
   /** inject a spoken answer (tap on the prompt surface) into the transcript. */
   const injectAnswer = useCallback((text: string) => {
