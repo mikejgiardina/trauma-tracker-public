@@ -13,6 +13,7 @@ import { PromptSurface } from './ui/PromptSurface.tsx';
 import { TranscriptPane } from './ui/TranscriptPane.tsx';
 import { Controls } from './ui/Controls.tsx';
 import { Report } from './report/Report.tsx';
+import { runReportAgents, type ReportAgents } from './report/reportAgents.ts';
 
 const envMode = (import.meta.env.VITE_DEMO_MODE as string | undefined) === 'live' ? 'live' : 'canned';
 
@@ -20,6 +21,8 @@ export default function App() {
   const [mode, setMode] = useState<CaptureMode>(envMode);
   const [dismissed, setDismissed] = useState<string[]>([]);
   const [showReport, setShowReport] = useState(false);
+  const [agents, setAgents] = useState<ReportAgents | null>(null);
+  const [agentsLoading, setAgentsLoading] = useState(false);
   const { state, start, startFile, stop, reset, injectAnswer } = useCapture(mode);
 
   const engine = useMemo(
@@ -39,6 +42,20 @@ export default function App() {
     reset();
     setDismissed([]);
     setShowReport(false);
+    setAgents(null);
+  }
+
+  // Generate report: open the deliverable, then run the post-report agents
+  // (nurse's note + hot debrief + exposure review) — one call each, best-effort.
+  async function onReport() {
+    setShowReport(true);
+    setAgents(null);
+    setAgentsLoading(true);
+    try {
+      setAgents(await runReportAgents(state.items, state.readings, state.utterances, engine.gaps));
+    } finally {
+      setAgentsLoading(false);
+    }
   }
 
   return (
@@ -59,7 +76,7 @@ export default function App() {
           onStop={() => void stop()}
           onReset={onReset}
           onFile={(f) => startFile(f)}
-          onReport={() => setShowReport(true)}
+          onReport={() => void onReport()}
         />
         {state.error && (
           <p className="rounded-lg border border-crit/50 bg-crit/10 px-3 py-2 text-sm text-crit">
@@ -86,7 +103,7 @@ export default function App() {
       </div>
 
       {showReport && (
-        <Report engine={engine} items={state.items} onClose={() => setShowReport(false)} />
+        <Report engine={engine} items={state.items} agents={agents} agentsLoading={agentsLoading} onClose={() => setShowReport(false)} />
       )}
     </div>
   );

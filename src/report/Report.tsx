@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { FileText, Printer, X } from 'lucide-react';
 import type { ChargeRuntime, EngineState, ExtractedItem } from '../types.ts';
+import type { ReportAgents } from './reportAgents.ts';
 import { money, tRel } from '../ui/format.ts';
 import './print.css';
 
@@ -12,9 +13,11 @@ function amount(c: ChargeRuntime): string {
   return c.status === 'billed' ? money(c.price) : c.status === 'declined' || c.status === 'unresolved' ? '$0' : '—';
 }
 
-export function Report({ engine, items, onClose }: {
+export function Report({ engine, items, agents, agentsLoading, onClose }: {
   engine: EngineState;
   items: ExtractedItem[];
+  agents?: ReportAgents | null;
+  agentsLoading?: boolean;
   onClose: () => void;
 }) {
   const events = items.filter((i) => i.type === 'event');
@@ -208,6 +211,106 @@ export function Report({ engine, items, onClose }: {
         <footer className="mt-6 border-t border-slate-300 pt-2 text-[9px] text-slate-500">
           Synthetic data only, no PHI. Clinical values marked NEEDS-CLINICIAN / NEEDS-CODER are unsigned proposals.
           Charges derive from the obligations ledger; CPT selection uses each obligation's code-map.
+        </footer>
+      </section>
+
+      {/* ── PAGE 3 — Nurse's note, hot debrief & exposure review (LLM agents) ── */}
+      <section className="report-page">
+        <div className="mb-3 flex items-baseline justify-between border-b border-slate-300 pb-2">
+          <h1 className="text-lg font-bold text-slate-800">Clinical narrative &amp; debrief</h1>
+          <div className="text-[10px] text-slate-500">AI-generated drafts · clinician reviews &amp; signs</div>
+        </div>
+
+        {agentsLoading && (
+          <p className="mb-3 text-xs text-slate-500">Generating nurse's note, hot debrief, and exposure review…</p>
+        )}
+
+        {/* Nurse's note */}
+        <div className="mb-5">
+          <h2 className="mb-1 font-semibold text-slate-800">Nurse's note</h2>
+          {agents?.note ? (
+            <>
+              <ol className="space-y-1 text-xs text-slate-700">
+                {agents.note.page1Narrative.map((c, i) => (
+                  <li key={i}>
+                    <span className="mr-1 font-mono text-[10px] text-slate-500">{tRel(c.t)}</span>
+                    {c.text}
+                  </li>
+                ))}
+              </ol>
+              {agents.note.page1NotCaptured.length > 0 && (
+                <div className="mt-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Not captured</div>
+                  <ul className="list-disc pl-4 text-[11px] text-slate-600">
+                    {agents.note.page1NotCaptured.map((g, i) => (
+                      <li key={i}><b>{g.what}</b> — {g.note}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {agents.note.attestation && (
+                <pre className="mt-2 whitespace-pre-wrap font-sans text-[9px] text-slate-500">{agents.note.attestation}</pre>
+              )}
+            </>
+          ) : !agentsLoading ? (
+            <p className="text-[11px] text-slate-400">Unavailable this run.</p>
+          ) : null}
+        </div>
+
+        {/* Hot debrief */}
+        <div className="mb-5">
+          <h2 className="mb-1 font-semibold text-slate-800">Hot debrief</h2>
+          {agents?.hotDebrief?.hot_debrief ? (
+            <div className="space-y-2 text-xs text-slate-700">
+              {agents.hotDebrief.hot_debrief.summary && <p>{agents.hotDebrief.hot_debrief.summary}</p>}
+              {agents.hotDebrief.hot_debrief.went_well?.length ? (
+                <div><span className="font-semibold">Went well:</span>
+                  <ul className="list-disc pl-4">{agents.hotDebrief.hot_debrief.went_well.map((w, i) => <li key={i}>{w.what}</li>)}</ul>
+                </div>
+              ) : null}
+              {agents.hotDebrief.hot_debrief.challenges?.length ? (
+                <div><span className="font-semibold">Challenges:</span>
+                  <ul className="list-disc pl-4">{agents.hotDebrief.hot_debrief.challenges.map((c, i) => <li key={i}>{c.what}</li>)}</ul>
+                </div>
+              ) : null}
+              {agents.hotDebrief.hot_debrief.action_points?.length ? (
+                <div><span className="font-semibold">Action points:</span>
+                  <ul className="list-disc pl-4">{agents.hotDebrief.hot_debrief.action_points.map((a, i) => (
+                    <li key={i}>{a.point}{a.owner_role ? ` — ${a.owner_role}` : ''}</li>
+                  ))}</ul>
+                </div>
+              ) : null}
+            </div>
+          ) : !agentsLoading ? (
+            <p className="text-[11px] text-slate-400">Unavailable this run.</p>
+          ) : null}
+        </div>
+
+        {/* Emotional-impact / exposure review */}
+        <div className="mb-3">
+          <h2 className="mb-1 font-semibold text-slate-800">Emotional-impact review</h2>
+          {agents?.exposure?.incident ? (
+            <div className="space-y-2 text-xs text-slate-700">
+              <div className="flex gap-6">
+                <div><span className="font-semibold">Incident load:</span> {agents.exposure.incident.incident_load ?? '—'}</div>
+                <div><span className="font-semibold">Impact likelihood:</span> {agents.exposure.incident.impact_likelihood ?? '—'}</div>
+              </div>
+              {agents.exposure.leadership?.aggregate_observations?.length ? (
+                <div><span className="font-semibold">Leadership observations:</span>
+                  <ul className="list-disc pl-4">{agents.exposure.leadership.aggregate_observations.map((o, i) => <li key={i}>{o}</li>)}</ul>
+                </div>
+              ) : null}
+              {agents.exposure._disclaimer && (
+                <p className="text-[9px] italic text-slate-500">{agents.exposure._disclaimer}</p>
+              )}
+            </div>
+          ) : !agentsLoading ? (
+            <p className="text-[11px] text-slate-400">Unavailable this run.</p>
+          ) : null}
+        </div>
+
+        <footer className="mt-6 border-t border-slate-300 pt-2 text-[9px] text-slate-500">
+          AI-generated drafts. Not a medical record until reviewed and signed. Synthetic demo, no PHI.
         </footer>
       </section>
     </div>,
