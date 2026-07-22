@@ -48,26 +48,18 @@ const HOT_DEBRIEF_SCHEMA = obj({
   exposure_handoff: obj({ observed_factors: arr(obj({ factor: S, evidence: S, t_rel: S })) }),
 });
 
+// Minimal shape — exactly what the report renders. Keeps the exposure call fast and
+// reliably under the function timeout (the full crew/factor/leadership structure was
+// ~20s; this is a few seconds).
 const EXPOSURE_BADGE_SCHEMA = obj({
   _disclaimer: S,
   incident: obj({
-    case_id: S,
-    exposure_factors: arr(obj({
-      factor: S,
-      category: enm('mechanism_injury', 'treatments', 'patient_demographics', 'patient_actions', 'staff_moral_injury', 'context'),
-      present: B,
-      evidence: S,
-      t_rel: S,
-    })),
     incident_load: band,
     impact_likelihood: band,
     band_rationale: S,
   }),
-  critical_incident: obj({ flagged: B, categories: arr(S), rationale: S }),
   leadership: obj({
     aggregate_observations: arr(S),
-    questions_worth_asking: arr(S),
-    resources_that_exist: arr(S),
   }),
 });
 
@@ -141,7 +133,7 @@ ${DOCTRINE}`,
   },
 
   exposure_badge: {
-    maxTokens: 1536,
+    maxTokens: 900,
     schema: EXPOSURE_BADGE_SCHEMA,
     system: `You produce the EMOTIONAL IMPACT ASSESSMENT (exposure badge) for LEADERSHIP — the aggregate view.
 The metaphor is a radiation dosimeter: it MEASURES dose against a threshold; it never diagnoses, never
