@@ -11,16 +11,25 @@
 import { DOCTRINE } from './_shared/doctrine.ts';
 import { callAgent, type JsonSchema } from './_shared/callAgent.ts';
 
-const SYSTEM = `You write ONE sentence of a nurse's transcription note for a SINGLE captured trauma-bay event.
-You are given the event (its time and what was captured) and the previous 1-2 sentences already written.
+const SYSTEM = `You compose ONE sentence of a trauma nurse's narrative note for a SINGLE captured event. You
+are given the event (what was captured) and the previous 1-2 sentences already written, for flow and to
+avoid repeating.
 
-Write one plain, factual, past-tense clause — the kind of line a nurse drops into a paper chart. State
-ONLY what this event captured; never infer, never add a vital sign, action, or assessment not present in
-the event. Do NOT embed the timestamp in the sentence (it is rendered separately). Do NOT conclude,
-diagnose, or interpret.
+VOICE — write like an experienced trauma nurse charting a clean narrative note: a complete, articulate,
+professionally phrased sentence in the past tense, using correct clinical terminology. Not clipped chart
+shorthand, not a sentence fragment. Elevate the phrasing while staying strictly factual — e.g. render
+"IV access x2, 16-gauge" as "Bilateral peripheral intravenous access was established with two 16-gauge
+catheters," and "FAST positive Morrison's pouch" as "A focused assessment with sonography for trauma was
+positive for free fluid in the hepatorenal recess."
 
-Do not repeat what the previous sentences already say. If this event adds nothing new beyond them (a
-readback, a duplicate, a restatement), return an EMPTY sentence.
+HARD RULE — NEVER put a time in the sentence. No "T+1:35", no clock time, no "at that point," "on
+arrival," "at this time," or any relative-time phrase whatsoever. The timestamp is printed separately in
+the margin. If a draft contains any time reference, rewrite it without one before returning.
+
+Also: state ONLY what THIS event captured — never infer, never add a vital sign, action, or assessment
+not present in the event; do not conclude, diagnose, or interpret. Do not repeat what the previous
+sentences already say — if this event adds nothing new (a readback, duplicate, or restatement), return an
+EMPTY sentence.
 
 ${DOCTRINE}`;
 
@@ -57,7 +66,7 @@ export default async (req: Request): Promise<Response> => {
     system: SYSTEM,
     user,
     schema: SCHEMA,
-    maxTokens: 200,
+    maxTokens: 320,
   });
 
   if (!result.ok) return json({ error: result.error }, result.status ?? 502);
