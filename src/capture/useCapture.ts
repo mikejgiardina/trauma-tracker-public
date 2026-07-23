@@ -30,6 +30,12 @@ export interface CaptureState {
 
 const TICK_MS = 400;
 
+// Max utterances handed to the extractor in one call. An uploaded file arrives as a
+// COMPLETE transcript, so extracting it in one shot makes the model emit every item at
+// once and the response truncates at max_tokens ("maxed out"). Bounding the window keeps
+// each response small no matter how long the recording is.
+const EXTRACT_WINDOW = 8;
+
 // The channel feeding the model (extraction / reveal) runs slightly BEHIND the outward
 // audio — like a real transcription pipeline, the words are heard first and appear a
 // beat later. Without this the timeline runs ahead of what you hear.
@@ -68,11 +74,12 @@ export function useCapture(initialMode: CaptureMode) {
     const utter = liveUtter.current;
     const from = lastExtractLen.current;
     if (utter.length <= from) return;
-    lastExtractLen.current = utter.length;
+    const to = Math.min(from + EXTRACT_WINDOW, utter.length);
+    lastExtractLen.current = to;
     extracting.current = true;
     try {
       // Fix 1: send only the new window + items already captured; accumulate + dedupe.
-      const newItems = await extract(utter.slice(from), liveItems.current);
+      const newItems = await extract(utter.slice(from, to), liveItems.current);
       liveItems.current = dedupeItems([...liveItems.current, ...newItems]);
     } catch (e) {
       setState((s) => ({ ...s, error: e instanceof Error ? e.message : String(e) }));
@@ -149,7 +156,14 @@ export function useCapture(initialMode: CaptureMode) {
       liveUtter.current = utter;
       durationRef.current = transcriptDurationSec(utter) || 1;
       lastExtractLen.current = 0;
-      await runExtractor();
+      // An upload lands as a finished transcript, so walk it in bounded windows — one
+      // call each — instead of asking for the whole extraction in a single response.
+      while (lastExtractLen.current < utter.length) {
+        const before = lastExtractLen.current;
+        await runExtractor();
+        if (lastExtractLen.current === before) break; // no progress; don't spin
+        setState((s) => ({ ...s, items: liveItems.current, readings: readingsFromItems(liveItems.current) }));
+      }
       startClock('file');
     } catch (e) {
       setState((s) => ({ ...s, status: 'error', error: e instanceof Error ? e.message : String(e) }));
