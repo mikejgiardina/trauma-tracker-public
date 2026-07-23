@@ -107,21 +107,31 @@ export function readingsFromItems(items: ExtractedItem[]): ValueReading[] {
   // model only bothers to emit the systolic, so recover it rather than trusting compliance.
   const PAIR = /(\d{2,3})\s*(?:\/|over)\s*(\d{2,3})/i;
 
+  const consumed = new Set<ValueReading>();
   const out: ValueReading[] = [];
+
   for (const r of raw) {
-    if (r.name === 'DBP') continue; // folded into BP below
+    if (r.name === 'DBP') continue; // resolved below — may or may not pair
     if (r.name === 'SBP' || r.name === 'BP') {
-      const d = nearestDbp(r.heardAtSec);
-      const spoken = typeof r.value === 'string' ? PAIR.exec(r.value) : null;
-      const fromRaw = r.raw ? PAIR.exec(r.raw) : null;
-      const value = d ? `${r.value}/${d.value}`
-        : spoken ? `${spoken[1]}/${spoken[2]}`
+      // precedence: an already-complete pair > a separately-emitted diastolic > the pair
+      // still sitting in the raw utterance > systolic alone.
+      const spoken = typeof r.value === 'string' ? PAIR.exec(String(r.value)) : null;
+      const d = spoken ? undefined : nearestDbp(r.heardAtSec);
+      if (d) consumed.add(d);
+      const fromRaw = !spoken && !d && r.raw ? PAIR.exec(r.raw) : null;
+      const value = spoken ? `${spoken[1]}/${spoken[2]}`
+        : d ? `${r.value}/${d.value}`
         : fromRaw ? `${fromRaw[1]}/${fromRaw[2]}`
-        : r.value;
+        : r.value; // a systolic on its own is a legitimate reading — DBP simply stays null
       out.push({ ...r, name: 'BP', unit: 'mmHg', value });
       continue;
     }
     out.push(r);
   }
-  return out;
+
+  // A diastolic with no systolic to pair with still gets entered, but keeps its own name:
+  // handed to the engine as "BP" it would be read as a SYSTOLIC and corrupt the Shock Index.
+  for (const d of dbp) if (!consumed.has(d)) out.push(d);
+
+  return out.sort((a, b) => a.heardAtSec - b.heardAtSec);
 }
