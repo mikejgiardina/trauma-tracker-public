@@ -15,6 +15,7 @@ import { Controls } from './ui/Controls.tsx';
 import { Report } from './report/Report.tsx';
 import { runReportAgents, type ReportAgents } from './report/reportAgents.ts';
 import { useNarrative } from './report/useNarrative.ts';
+import { SAMPLE_DIALOGUE } from './capture/sampleDialogue.ts';
 
 const envMode = (import.meta.env.VITE_DEMO_MODE as string | undefined) === 'live' ? 'live' : 'canned';
 
@@ -24,7 +25,7 @@ export default function App() {
   const [showReport, setShowReport] = useState(false);
   const [agents, setAgents] = useState<ReportAgents | null>(null);
   const [agentsLoading, setAgentsLoading] = useState(false);
-  const { state, start, startFile, stop, reset, injectAnswer } = useCapture(mode);
+  const { state, start, startFile, startTranscript, stop, reset, injectAnswer } = useCapture(mode);
 
   const engine = useMemo(
     () => recompute({ utterances: state.utterances, readings: state.readings, nowSec: state.nowSec, dismissed }, defaultConfig),
@@ -83,6 +84,8 @@ export default function App() {
           onStop={() => void stop()}
           onReset={onReset}
           onFile={(f) => startFile(f)}
+          onTranscript={(t) => startTranscript(t)}
+          onTranscriptSample={() => startTranscript(SAMPLE_DIALOGUE)}
           onReport={() => void onReport()}
         />
         {state.error && (

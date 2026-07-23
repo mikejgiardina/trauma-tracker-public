@@ -14,6 +14,7 @@ import { revealCanned } from './cannedAdapter.ts';
 import { cannedDurationSec } from './cannedTranscript.ts';
 import { MicCapture } from './deepgramAdapter.ts';
 import { transcribeFile, transcriptDurationSec } from './fileAdapter.ts';
+import { parseTranscript } from './transcriptAdapter.ts';
 import { dedupeItems, extract, readingsFromItems } from './extractorClient.ts';
 
 export type CaptureStatus = 'idle' | 'running' | 'stopped' | 'error';
@@ -29,6 +30,11 @@ export interface CaptureState {
 }
 
 const TICK_MS = 400;
+
+// The channel feeding the model (extraction / reveal) runs slightly BEHIND the outward
+// audio — like a real transcription pipeline, the words are heard first and appear a
+// beat later. Without this the timeline runs ahead of what you hear.
+const MODEL_LAG_SEC = 1.8;
 
 /** ?speed=N fast-forwards the canned replay clock (rehearsal / test); default 1×. */
 function replaySpeed(): number {
@@ -51,6 +57,7 @@ export function useCapture(initialMode: CaptureMode) {
   const liveUtter = useRef<Utterance[]>([]);
   const liveItems = useRef<ExtractedItem[]>([]);
   const injected = useRef<Utterance[]>([]);
+  const transcriptUtter = useRef<Utterance[]>([]); // injected transcript, revealed over time
   const extracting = useRef(false);
   const lastExtractLen = useRef(0);
 
@@ -84,7 +91,7 @@ export function useCapture(initialMode: CaptureMode) {
       // playing (autoplay blocked, or ?speed rehearsal).
       const onAudio = mode === 'canned' && audio.current != null && !audio.current.paused;
       const elapsed = onAudio
-        ? audio.current!.currentTime
+        ? Math.max(0, audio.current!.currentTime - MODEL_LAG_SEC) // model feed trails the audio
         : ((Date.now() - startEpoch.current) / 1000) * speed;
       if (mode === 'canned') {
         const nowSec = Math.min(elapsed, durationRef.current);
@@ -93,6 +100,15 @@ export function useCapture(initialMode: CaptureMode) {
           .sort((a, b) => a.atSec - b.atSec);
         setState((s) => ({ ...s, nowSec, utterances, items: snap.items, readings: snap.readings }));
         if (nowSec >= durationRef.current) { clearTick(); stopAudio(); setState((s) => ({ ...s, status: 'stopped' })); }
+      } else if (mode === 'transcript') {
+        // Injected transcript: reveal utterances at their timestamps and feed the live
+        // extractor (windowed) exactly as production would — no audio, no STT.
+        const nowSec = Math.min(elapsed, durationRef.current);
+        liveUtter.current = transcriptUtter.current.filter((u) => u.atSec <= nowSec);
+        void runExtractor();
+        const utter = [...liveUtter.current, ...injected.current].sort((a, b) => a.atSec - b.atSec);
+        setState((s) => ({ ...s, nowSec, utterances: utter, items: liveItems.current, readings: readingsFromItems(liveItems.current) }));
+        if (nowSec >= durationRef.current) { clearTick(); setState((s) => ({ ...s, status: 'stopped' })); }
       } else {
         const nowSec = Math.min(elapsed, durationRef.current || elapsed);
         void runExtractor();
@@ -145,6 +161,20 @@ export function useCapture(initialMode: CaptureMode) {
     }
   }, [runExtractor, startClock]);
 
+  /** Inject a pre-written transcript and run it through the extractor over time — no STT. */
+  const startTranscript = useCallback((text: string) => {
+    const utter = parseTranscript(text);
+    liveUtter.current = []; liveItems.current = []; injected.current = []; lastExtractLen.current = 0;
+    transcriptUtter.current = utter;
+    durationRef.current = utter.length ? utter[utter.length - 1].atSec + 2 : 1;
+    if (!utter.length) {
+      setState((s) => ({ ...s, status: 'error', error: 'No timestamped lines found in the transcript.' }));
+      return;
+    }
+    setState((s) => ({ ...s, status: 'running', mode: 'transcript', error: undefined, nowSec: 0, utterances: [], items: [], readings: [] }));
+    startClock('transcript');
+  }, [startClock]);
+
   const stop = useCallback(async () => {
     clearTick();
     stopAudio();
@@ -156,7 +186,7 @@ export function useCapture(initialMode: CaptureMode) {
     clearTick();
     stopAudio();
     void mic.current?.stop(); mic.current = null;
-    liveUtter.current = []; liveItems.current = []; injected.current = []; lastExtractLen.current = 0;
+    liveUtter.current = []; liveItems.current = []; injected.current = []; transcriptUtter.current = []; lastExtractLen.current = 0;
     setState({ status: 'idle', mode: initialMode, nowSec: 0, utterances: [], readings: [], items: [] });
   }, [initialMode, stopAudio]);
 
@@ -175,5 +205,5 @@ export function useCapture(initialMode: CaptureMode) {
 
   useEffect(() => () => clearTick(), []);
 
-  return { state, start, startFile, stop, reset, injectAnswer };
+  return { state, start, startFile, startTranscript, stop, reset, injectAnswer };
 }

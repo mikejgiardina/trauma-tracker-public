@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { FileText, Mic, Play, Radio, RotateCcw, Square } from 'lucide-react';
+import { ClipboardList, FileText, Mic, Play, Radio, RotateCcw, Square } from 'lucide-react';
 import type { CaptureMode } from '../capture/adapter.ts';
 import type { CaptureStatus } from '../capture/useCapture.ts';
 import { tRel } from './format.ts';
@@ -9,10 +9,11 @@ const MODES: { id: CaptureMode; label: string; icon: typeof Mic }[] = [
   { id: 'canned', label: 'Canned', icon: Play },
   { id: 'live', label: 'Live mic', icon: Mic },
   { id: 'file', label: 'File', icon: FileText },
+  { id: 'transcript', label: 'Transcript', icon: ClipboardList },
 ];
 
 export function Controls({
-  mode, setMode, status, nowSec, resuscitationActive, onStart, onStop, onReset, onFile, onReport,
+  mode, setMode, status, nowSec, resuscitationActive, onStart, onStop, onReset, onFile, onTranscript, onTranscriptSample, onReport,
 }: {
   mode: CaptureMode;
   setMode: (m: CaptureMode) => void;
@@ -23,9 +24,12 @@ export function Controls({
   onStop: () => void;
   onReset: () => void;
   onFile: (f: File) => void;
+  onTranscript: (text: string) => void;
+  onTranscriptSample: () => void;
   onReport: () => void;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
+  const txtInput = useRef<HTMLInputElement>(null);
   const running = status === 'running';
   const started = status !== 'idle';
 
@@ -60,6 +64,16 @@ export function Controls({
               <FileText size={16} /> Choose audio…
             </button>
             <input ref={fileInput} type="file" accept="audio/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
+          </>
+        ) : mode === 'transcript' ? (
+          <>
+            <button onClick={onTranscriptSample} className="flex items-center gap-1.5 rounded-lg bg-accent px-4 text-sm font-medium text-white hover:opacity-90">
+              <ClipboardList size={16} /> Load sample
+            </button>
+            <button onClick={() => txtInput.current?.click()} className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-4 text-sm hover:bg-surface-2">
+              <FileText size={16} /> Choose .txt…
+            </button>
+            <input ref={txtInput} type="file" accept=".txt,text/plain" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void f.text().then(onTranscript); }} />
           </>
         ) : (
           <button onClick={onStart} className="flex items-center gap-1.5 rounded-lg bg-accent px-4 text-sm font-medium text-white hover:opacity-90">

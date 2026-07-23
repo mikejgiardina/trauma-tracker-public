@@ -8,7 +8,7 @@
 
 import type { Utterance } from '../types.ts';
 
-export type CaptureMode = 'canned' | 'live' | 'file';
+export type CaptureMode = 'canned' | 'live' | 'file' | 'transcript';
 
 export interface SttResult {
   utterances: { atSec: number; text: string }[];
