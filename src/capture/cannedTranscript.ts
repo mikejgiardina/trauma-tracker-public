@@ -70,7 +70,8 @@ export const cannedUtterances: Utterance[] = cannedTranscript.map((l) => ({
   text: l.text,
 }));
 
-/** Wall-clock length of the canned case — a few seconds past the last spoken line so the
- *  final extractor pass completes before we stop. (Audio file itself runs ~248s with a
+/** Wall-clock length of the canned case. Lines are revealed once fully spoken
+ *  (useCapture revealTimes), so the last one lands at ~193.8s — this runs past that to
+ *  give the final extractor pass room to complete. (Audio file itself runs ~248s with a
  *  silent tail; the case wraps at the disposition line.) */
-export const cannedDurationSec = 194;
+export const cannedDurationSec = 200;
