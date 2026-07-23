@@ -10,8 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ExtractedItem, Utterance, ValueReading } from '../types.ts';
 import type { CaptureMode } from './adapter.ts';
-import { revealCanned } from './cannedAdapter.ts';
-import { cannedDurationSec } from './cannedTranscript.ts';
+import { cannedDurationSec, cannedUtterances } from './cannedTranscript.ts';
 import { MicCapture } from './deepgramAdapter.ts';
 import { transcribeFile, transcriptDurationSec } from './fileAdapter.ts';
 import { parseTranscript } from './transcriptAdapter.ts';
@@ -93,22 +92,17 @@ export function useCapture(initialMode: CaptureMode) {
       const elapsed = onAudio
         ? Math.max(0, audio.current!.currentTime - MODEL_LAG_SEC) // model feed trails the audio
         : ((Date.now() - startEpoch.current) / 1000) * speed;
-      if (mode === 'canned') {
-        const nowSec = Math.min(elapsed, durationRef.current);
-        const snap = revealCanned(nowSec);
-        const utterances = [...snap.utterances, ...injected.current.filter((i) => i.atSec <= nowSec)]
-          .sort((a, b) => a.atSec - b.atSec);
-        setState((s) => ({ ...s, nowSec, utterances, items: snap.items, readings: snap.readings }));
-        if (nowSec >= durationRef.current) { clearTick(); stopAudio(); setState((s) => ({ ...s, status: 'stopped' })); }
-      } else if (mode === 'transcript') {
-        // Injected transcript: reveal utterances at their timestamps and feed the live
-        // extractor (windowed) exactly as production would — no audio, no STT.
+      if (mode === 'canned' || mode === 'transcript') {
+        // Canned + transcript share one path: reveal timed utterances as the clock
+        // reaches them and feed the LIVE extractor (windowed) exactly as production would.
+        // Canned's clock is the demo audio (elapsed = audio.currentTime − lag, above), so
+        // the panels track what's heard; transcript runs on the wall clock, no audio/STT.
         const nowSec = Math.min(elapsed, durationRef.current);
         liveUtter.current = transcriptUtter.current.filter((u) => u.atSec <= nowSec);
         void runExtractor();
         const utter = [...liveUtter.current, ...injected.current].sort((a, b) => a.atSec - b.atSec);
         setState((s) => ({ ...s, nowSec, utterances: utter, items: liveItems.current, readings: readingsFromItems(liveItems.current) }));
-        if (nowSec >= durationRef.current) { clearTick(); setState((s) => ({ ...s, status: 'stopped' })); }
+        if (nowSec >= durationRef.current) { clearTick(); stopAudio(); setState((s) => ({ ...s, status: 'stopped' })); }
       } else {
         const nowSec = Math.min(elapsed, durationRef.current || elapsed);
         void runExtractor();
@@ -122,6 +116,7 @@ export function useCapture(initialMode: CaptureMode) {
     liveUtter.current = []; liveItems.current = []; injected.current = []; lastExtractLen.current = 0;
     setState((s) => ({ ...s, status: 'running', mode, error: undefined, nowSec: 0, utterances: [], items: [], readings: [] }));
     if (mode === 'canned') {
+      transcriptUtter.current = cannedUtterances; // the reveal source, gated by audio time
       durationRef.current = cannedDurationSec;
       // Play the demo recording OUTWARD through the speakers (Start is a user gesture,
       // so audible autoplay is allowed) and let it drive the reveal. Skipped on
