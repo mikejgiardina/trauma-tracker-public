@@ -30,27 +30,10 @@ export interface CaptureState {
 
 const TICK_MS = 400;
 
-/**
- * When each line is HEARD IN FULL, not when the speaker starts it.
- *
- * A timestamp marks the start of an utterance, but the line takes seconds to say — so
- * revealing at `atSec` puts words on screen before they leave the speaker's mouth (worst
- * on long lines: the tail of a 10-second sentence could show ~8s early). Each line is
- * therefore revealed at `atSec + how long it takes to say`, so the transcript can never
- * run ahead of the audio. This subsumes the old fixed lag, which only shifted the start.
- *
- * ~0.45 s/word is deliberately generous — late is fine, early is the bug. The estimate is
- * then capped at the next line's start: once the speaker has moved on, the previous line
- * is certainly complete, so the cap bounds any error in the rate.
- */
-function revealTimes(utter: Utterance[]): number[] {
-  return utter.map((u, i) => {
-    const words = u.text.trim().split(/\s+/).length;
-    const spoken = u.atSec + Math.max(1, words * 0.45);
-    const next = utter[i + 1]?.atSec;
-    return next != null ? Math.min(spoken, next) : spoken;
-  });
-}
+// The channel feeding the model (extraction / reveal) runs slightly BEHIND the outward
+// audio — like a real transcription pipeline, the words are heard first and appear a
+// beat later. Without this the timeline runs ahead of what you hear.
+const MODEL_LAG_SEC = 1.8;
 
 /** ?speed=N fast-forwards the canned replay clock (rehearsal / test); default 1×. */
 function replaySpeed(): number {
@@ -74,7 +57,6 @@ export function useCapture(initialMode: CaptureMode) {
   const liveItems = useRef<ExtractedItem[]>([]);
   const injected = useRef<Utterance[]>([]);
   const transcriptUtter = useRef<Utterance[]>([]); // injected transcript, revealed over time
-  const revealAt = useRef<number[]>([]); // parallel to transcriptUtter: when each line is fully spoken
   const extracting = useRef(false);
   const lastExtractLen = useRef(0);
 
@@ -108,7 +90,7 @@ export function useCapture(initialMode: CaptureMode) {
       // playing (autoplay blocked, or ?speed rehearsal).
       const onAudio = mode === 'canned' && audio.current != null && !audio.current.paused;
       const elapsed = onAudio
-        ? audio.current!.currentTime // the demo audio IS the clock
+        ? Math.max(0, audio.current!.currentTime - MODEL_LAG_SEC) // model feed trails the audio
         : ((Date.now() - startEpoch.current) / 1000) * speed;
       if (mode === 'canned' || mode === 'transcript') {
         // Canned + transcript share one path: reveal timed utterances as the clock
@@ -116,8 +98,7 @@ export function useCapture(initialMode: CaptureMode) {
         // Canned's clock is the demo audio (elapsed = audio.currentTime − lag, above), so
         // the panels track what's heard; transcript runs on the wall clock, no audio/STT.
         const nowSec = Math.min(elapsed, durationRef.current);
-        // a line appears once it has been SAID, not when it starts (revealTimes)
-        liveUtter.current = transcriptUtter.current.filter((_, i) => revealAt.current[i] <= nowSec);
+        liveUtter.current = transcriptUtter.current.filter((u) => u.atSec <= nowSec);
         void runExtractor();
         const utter = [...liveUtter.current, ...injected.current].sort((a, b) => a.atSec - b.atSec);
         setState((s) => ({ ...s, nowSec, utterances: utter, items: liveItems.current, readings: readingsFromItems(liveItems.current) }));
@@ -136,7 +117,6 @@ export function useCapture(initialMode: CaptureMode) {
     setState((s) => ({ ...s, status: 'running', mode, error: undefined, nowSec: 0, utterances: [], items: [], readings: [] }));
     if (mode === 'canned') {
       transcriptUtter.current = cannedUtterances; // the reveal source, gated by audio time
-      revealAt.current = revealTimes(cannedUtterances);
       durationRef.current = cannedDurationSec;
       // Play the demo recording OUTWARD through the speakers (Start is a user gesture,
       // so audible autoplay is allowed) and let it drive the reveal. Skipped on
@@ -181,9 +161,7 @@ export function useCapture(initialMode: CaptureMode) {
     const utter = parseTranscript(text);
     liveUtter.current = []; liveItems.current = []; injected.current = []; lastExtractLen.current = 0;
     transcriptUtter.current = utter;
-    revealAt.current = revealTimes(utter);
-    // run long enough for the last line to be fully "spoken" and its extract to land
-    durationRef.current = revealAt.current.length ? revealAt.current[revealAt.current.length - 1] + 4 : 1;
+    durationRef.current = utter.length ? utter[utter.length - 1].atSec + 2 : 1;
     if (!utter.length) {
       setState((s) => ({ ...s, status: 'error', error: 'No timestamped lines found in the transcript.' }));
       return;
@@ -203,7 +181,7 @@ export function useCapture(initialMode: CaptureMode) {
     clearTick();
     stopAudio();
     void mic.current?.stop(); mic.current = null;
-    liveUtter.current = []; liveItems.current = []; injected.current = []; transcriptUtter.current = []; revealAt.current = []; lastExtractLen.current = 0;
+    liveUtter.current = []; liveItems.current = []; injected.current = []; transcriptUtter.current = []; lastExtractLen.current = 0;
     setState({ status: 'idle', mode: initialMode, nowSec: 0, utterances: [], readings: [], items: [] });
   }, [initialMode, stopAudio]);
 
