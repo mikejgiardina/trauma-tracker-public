@@ -1,71 +1,48 @@
 # Trauma Tracker
 
-**A real-time ED trauma registrar.** Ambient voice capture is the commodity base — Trauma Tracker is the layer on top: while a trauma resuscitation is happening, it listens and does the documentation, quality-measure, and billing work the team can't touch while they're saving a life.
+**A real-time ED trauma registrar.** While a trauma resuscitation is happening, it listens to the room and does the documentation, quality-measure, and billing work the team can't touch while they're saving a life — then generates the deliverable at disposition.
 
-Synthetic data only. No PHI, by design.
+**Synthetic data only. No PHI, by design.**
 
-## The problem
+Live demo: https://traumatrackerv2.netlify.app (canned mode runs with no keys).
 
-An ED trauma resuscitation generates a documentation, core-measure, and billing burden nobody is free to handle in the moment. Charges leak. Core-measure clocks — trauma-activation response, airway, sepsis, STEMI — get reconstructed from memory hours later. Accreditation and reimbursement both hinge on times nobody had a hand free to write down.
+## What it does
 
-## The idea
+From a live — or replayed, or injected — trauma-bay transcript, specialized agents **decide and produce**, they don't just display:
 
-From the same live audio, specialized agents **decide and produce** — they don't just display:
+- **Extract** — pull spoken values and interventions as they're said (GCS, HR/BP, activation, IV access, type & cross, intubation), timestamped.
+- **Score** — Shock Index, RTS, GCS computed live as the patient changes (deterministic, no model).
+- **Charge integrity** — a charge fires only when the documentation that code requires is present (e.g. intubation confirmed by EtCO₂ + bilateral breath sounds).
+- **Core-measure clocks & activation fee** — watches accreditation windows and makes the trauma-activation determination against criteria, with the evidence cited.
+- **Nurse's note** — a signable narrative, composed one sentence per event *as the resus runs* (no big end-of-case call).
+- **Hot debrief & emotional-impact review** — post-report agents that surface **only** what's genuinely worth passing on (a routine case returns "nothing to flag").
 
-- **Extract** — pull values and interventions as they're spoken (GCS, HR, BP, activation, IV access, type & cross, intubation), timestamped.
-- **Score** — compute and track trauma scores live as the patient changes (e.g. Shock Index, RTS).
-- **Clocks** — watch accreditation / core-measure windows (airway secured, surgeon-at-bedside) and mark them met or open.
-- **Charge integrity** — fire a charge only when the documentation that code requires is present (e.g. intubation confirmed by EtCO₂ + bilateral breath sounds).
-- **Reimbursement / activation** — make the trauma-activation determination against criteria, with the evidence cited and open conditions printed as open.
+The deliverable is a multi-page report: nursing narrative, RCM charge/compliance report, activation determination, and the debrief / exposure review. Unresolved prompts ride the record to the report as documented gaps.
 
-A human stays in the loop: the tool asks ("missed capture, or not yet performed?"), it doesn't accuse — and every correction is supervision signal.
+## Capture sources
 
-## The deliverable
+- **Canned** — a bundled scripted case; plays with synced demo audio, zero keys, deterministic.
+- **Live mic** — `getUserMedia` → server-side STT → extractor.
+- **File** — upload an audio file → same STT path.
+- **Transcript** — inject a pre-written, timestamped dialogue straight into the extractor (no audio, no STT). Author a case as text and run it through the real product.
 
-The product is the **record and the agents**, not the screen. One click generates a two-page report:
+## Architecture
 
-1. **Nursing transcription sheet** — every event + timestamp, ready to drop into a paper chart.
-2. **RCM report** — captured charges + estimated total, measure compliance, and the trauma-activation determination with evidence cited and an **abstractor's sign-off line**. The tool presents the determination; a human signs it.
+- **Frontend** — React 19 + Vite + Tailwind. Decomposed panels (scores, charges, measures, activation, prompt surface, transcript) driven by the deterministic engine.
+- **Engine** (`src/engine/`) — the deterministic core: an obligations ledger, scores, clocks, charge/CPT mapping, and the activation lattice. No model; pure functions.
+- **Capture** (`src/capture/`) — the canned / live-mic / file / transcript sources plus the extractor client. The extractor is *windowed*: it sends only the new transcript window and the already-captured items, and the model emits only new items, so tokens stay bounded across a case.
+- **Backend** (`netlify/functions/`) — serverless functions that hold the API keys **server-side** (the browser never sees them) and route every model call through one `callAgent` chokepoint (Anthropic structured outputs, thinking disabled, retries). Functions: `claude` (extractor), `note` (per-sentence nurse's note), `debrief` (hot debrief + exposure), `stt` (Deepgram).
 
-Runs on one device, no EHR integration required — a rural trauma bay still on paper prints this and charts from it; a metro center hands the capture layer to its EHR or ambient-scribe suite.
+## Run it
 
-**Roadmap:** EHR write-back, payor prior-auth eligibility, full injury abstraction, and a supervision-driven data flywheel.
-
-## Repo layout
-
-```
-src/
-├── engine/     deterministic recompute — ledger · walker · clocks · charges ·
-│               measures · scores · matcher (all code, no model)
-├── capture/    mic + swappable STT client · canned replay · extractor client
-├── ui/         live board · values-heard scratchpad · the single prompt surface
-├── report/     2-page print-CSS PDF (nursing sheet + RCM report), no PDF library
-├── data/       reference rulebooks — obligations · activation lattice · charges ·
-│               measures · scores (the JSON is the rulebook; the engine plays by it)
-└── types.ts    the frozen shared contract
-netlify/functions/   claude.ts (the one live model call) · stt.ts (swappable STT)
-tools/               score table-test · reference-integrity lint
-prompts/ · fixtures/ reference prompt text + the canned trauma case
-```
-
-## Running
-
-```
+```bash
 npm install
-npm run dev            # http://localhost:5173
+npm run dev          # canned mode works with no keys
 ```
 
-**Canned mode (default — zero keys).** Hit **Start**: the bundled trauma case replays, the
-board fills, scores worsen, the vitals-freshness prompt fires and retracts itself, charges and
-measures land, and **Generate report** prints the two pages (browser Print → *Save as PDF*).
-Append `?speed=30` to fast-forward the replay for rehearsal.
+The live agent paths need keys, set as **Netlify environment variables** (never in the repo):
+`ANTHROPIC_API_KEY`, `DEEPGRAM_API_KEY`, and `STT_VENDOR=deepgram`.
 
-**Live mode.** Copy `.env.example` → `.env` and set `ANTHROPIC_API_KEY`, `DEEPGRAM_API_KEY`,
-`STT_VENDOR=deepgram`. `npm run dev` serves the serverless functions locally — mic → `/stt`
-(Deepgram Nova-3 Medical, keyterm-biased) → transcript → `/claude` (Extractor/Scribe) → the same
-board. `File` mode uploads a clip through the identical pipeline; keys never reach the browser.
+## Lineage
 
-**Checks.** `npm run build` · `npm run lint` · `npm run test:scores` · `npm run lint:reference`
-
-Synthetic data only. Clinical values and CPTs marked `NEEDS-CLINICIAN` / `NEEDS-CODER` are
-unsigned proposals — the engine routes around them and prints them as findings, never guesses.
+This is the **working build** of the product. The concept was first proven in a hackathon submission (a separate, private, archived repo — frozen at submission). This repo is where it became functional: production model-call plumbing (structured outputs, a single-source agent doctrine, per-window extraction), the full agent set (extractor, nurse's note, hot debrief, exposure review), and the four capture sources above. What the submission sketched, this repo runs.
