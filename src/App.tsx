@@ -115,6 +115,10 @@ export default function App() {
       {showReport && (
         <Report engine={engine} items={state.items} agents={agents} agentsLoading={agentsLoading} noteLines={narrative.lines} noteComposing={narrative.composing} onClose={() => setShowReport(false)} />
       )}
+
+      <footer className="mt-6 border-t border-slate-700/40 pt-2 text-[9px] text-slate-500">
+        &copy; {new Date().getFullYear()} Trimergent Tech LLC. MIT licensed. Synthetic data only, no PHI.
+      </footer>
     </div>
   );
 }
