@@ -61,7 +61,7 @@
       "verify": true
     },
     {
-      "id": "SEP1_3HR_BUNDLE",
+      "id": "SEP_1_3HR_BUNDLE",
       "name": "Severe sepsis 3-hour bundle",
       "standard": "CMS SEP-1",
       "clock_start": "sepsis_recognition",
@@ -72,7 +72,7 @@
       "verify": true
     },
     {
-      "id": "SEP1_6HR_BUNDLE",
+      "id": "SEP_1_6HR_BUNDLE",
       "name": "Severe sepsis / septic shock 6-hour bundle",
       "standard": "CMS SEP-1",
       "clock_start": "sepsis_recognition",
