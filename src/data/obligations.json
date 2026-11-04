@@ -1,10 +1,10 @@
 {
   "_meta": {
     "purpose": "The obligations ledger catalog. One row per thing that matters. Each row holds a STATE (satisfied|missing|ambiguous|...) and a prompt is nothing but an open, material obligation rendered. Replaces the prose `requires` strings in charges.json with machine-checkable predicates.",
-    "status": "PROPOSAL — pending clinician sign-off (Damian Mosher, ER MD) + coder/CDI review. NOT signed off. See ../CLINICIAN_SIGNOFF_ADDENDUM.md.",
+    "status": "PROPOSAL — not reviewed by a clinician or a coder. Not clinically reviewed. NOT for clinical use.",
     "relates_to": "charges.json (requires -> obligations), accreditation_measures.json (measures -> obligations), activation_lattice.json (ambiguous -> lattice walk)",
     "synthetic_only": true,
-    "verify_owner": "damian",
+    "verify_owner": "clinician",
     "read_first": "../OBLIGATIONS_MODEL.md"
   },
 
@@ -142,7 +142,7 @@
         { "id": "return",    "affirm": ["return of", "mils of blood", "ml of blood", "immediate return", "output"] },
         { "id": "post_bs",   "affirm": ["breath sounds are improved", "breath sounds improved", "re-expanded"] }
       ], "min_satisfied": 1 },
-      "_any_of_note": "1-of-3 proposed. What actually counts as 'placement documented' is a clinical/coding call, NOT MINE. -> ADDENDUM Q6. Modeled as any_of so the clinician (Damian) can set min_satisfied without a code change.",
+      "_any_of_note": "1-of-3 proposed. What actually counts as 'placement documented' is a clinical/coding call, NOT MINE. -> ADDENDUM Q6. Modeled as any_of so a clinician can set min_satisfied without a code change.",
       "material_for": ["qualification"],
       "prompt": "Chest tube captured — placement not documented. Space, return, or post-placement breath sounds?",
       "terminal": { "at": "disposition", "if_open": "unresolved", "report": "page2_gap", "dollar_impact": 1200.00 },
