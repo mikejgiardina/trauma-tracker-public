@@ -5,9 +5,9 @@
     "origin": "Founder direction, 2026-07-17. Named examples: NPI, the Belmont transfuser cassette, Ancef set to 20 cc NS push. Carried as an open item on docs/adr/0014-the-tool-presents-an-abstractor-signs.md.",
     "synthetic_only": true,
 
-    "naming_rule": "FACILITIES ARE ARCHETYPES, NOT NAMES — and this is deliberate. The demo is staged at Conemaugh Memorial (design/mockup-v3.html:236), a REAL Level I centre, whose ER physician (Damian Mosher) attends in person on 7/18. Writing 'Conemaugh's protocol is X' would fabricate a fact about a real named institution in front of someone who works there. So no facility here carries a real or invented brand name. Each is a letter plus an `archetype` describing what it represents. The archetype is what carries the meaning; a name would only carry risk. If a real facility's real protocol is ever wanted, it is ASKED FOR, not invented — same rule as every other clinical claim in this repo.",
+    "naming_rule": "FACILITIES ARE ARCHETYPES, NOT NAMES — and this is deliberate. Writing 'Hospital H's protocol is X' about a real hospital would state a fact about a real institution that nobody here has checked. So no facility here carries a real or invented brand name. Each is a letter plus an `archetype` describing what it represents. The archetype is what carries the meaning; a name would only carry risk. If a real facility's real protocol is ever wanted, it is ASKED FOR, not invented — same rule as every other clinical claim in this repo.",
 
-    "routing": "This file deliberately carries NO `verify_owner` field. The other four data files hardcode `verify_owner: \"cory\"`, who is out (7/16 roster) — lint assertion F has been failing on that drift and cannot fix itself. Routing here lives in `open_questions.json` (CLIN-Q8, CLIN-Q9, CODER-Q12) instead, which is the one place that is already enforced in both directions. A name in a data file goes stale; the ledger does not.",
+    "routing": "This file carries no `verify_owner` field: no code reads it yet, so there is nothing for a reviewer to sign off on.",
 
     "not_wired_in": [
       "tools/lint_reference.mjs — does NOT read this file. Wiring it in would add a 5th assertion and change the required output from `3 pass · 4 known/tracked · 0 fail` to `4 pass`. That needs an explicit OK, so it is not done here. See FACILITY_PROTOCOLS.md §5.",

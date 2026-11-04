@@ -1,10 +1,10 @@
 {
   "_meta": {
     "purpose": "Decision lattice with pruning for TRAUMA_ACTIVATION_CRITERIA. Replaces the flat string arrays in accreditation_measures.json -> criteria with walkable, prunable data. The walker is code; every mechanism, criterion and subcategory is a ROW. New mechanisms = new rows, not new code.",
-    "status": "PROPOSAL — pending clinician sign-off (Damian Mosher, ER MD) + coder review. NOT signed off. See ../CLINICIAN_SIGNOFF_ADDENDUM.md.",
+    "status": "PROPOSAL — not reviewed by a clinician or a coder. Not clinically reviewed. NOT for clinical use.",
     "replaces": "accreditation_measures.json -> TRAUMA_ACTIVATION_CRITERIA.criteria (the three flat string arrays)",
     "synthetic_only": true,
-    "verify_owner": "damian",
+    "verify_owner": "clinician",
     "scope_note": "DATA IS DELIBERATELY NARROW, and the cutoff is CUMULATIVE CASE COVERAGE — not phrase frequency, not importance. Pick the mechanism families that cover ~78% of cases; their verbiage comes along for the ride. Skip crocodile bites -> skip crocodile-bite vocabulary. The case list IS the vocabulary list.",
     "coverage": {
       "claim": "Falls, motor vehicle traffic, firearm, and cut/pierce account for ~78% of US trauma registry cases.",

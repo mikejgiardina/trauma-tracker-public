@@ -1,8 +1,8 @@
 {
   "_meta": {
     "purpose": "Deterministic trauma-score formulas computed live from captured vitals/exam. These are code, not an LLM lane — the physiology-monitor lane just feeds inputs; the score is a pure function.",
-    "status": "Formulas from standard published scoring. GCS / RTS / Shock Index are confidently encoded. MGAP / GAP intentionally omitted pending Damian-verified coding (don't ship a wrong formula).",
-    "verify_owner": "damian"
+    "status": "Formulas from standard published scoring. GCS / RTS / Shock Index are confidently encoded. MGAP / GAP intentionally omitted until a clinician verifies them (don't ship a wrong formula).",
+    "verify_owner": "clinician"
   },
   "scores": {
     "GCS": {
@@ -31,7 +31,7 @@
       },
       "interpretation": "Lower = worse. ~7.84 = normal physiology."
     },
-    "MGAP": {"name": "Mechanism/GCS/Age/Pressure", "status": "TODO — add with Damian-verified coding", "compute": null},
-    "GAP": {"name": "GCS/Age/Pressure", "status": "TODO — add with Damian-verified coding", "compute": null}
+    "MGAP": {"name": "Mechanism/GCS/Age/Pressure", "status": "TODO — add once a clinician verifies the formula", "compute": null},
+    "GAP": {"name": "GCS/Age/Pressure", "status": "TODO — add once a clinician verifies the formula", "compute": null}
   }
 }

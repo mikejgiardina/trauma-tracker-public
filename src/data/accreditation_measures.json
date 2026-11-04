@@ -1,9 +1,9 @@
 {
   "_meta": {
     "purpose": "Public, published quality-measure / accreditation time-standards the compliance lane checks captured events against. The 'absent-by-deadline' arm of the extract-and-compare engine fires a miss/possible-miss when clock elapses past target with no matching captured event.",
-    "status": "DEMO REFERENCE — compiled from public published standards. Pending clinician sign-off (Damian Mosher, ER MD). NOT for clinical use as-is.",
+    "status": "DEMO REFERENCE — compiled from public published standards. Not clinically reviewed. NOT for clinical use as-is.",
     "synthetic_only": true,
-    "verify_owner": "damian"
+    "verify_owner": "clinician"
   },
   "measures": [
     {
@@ -61,7 +61,7 @@
       "verify": true
     },
     {
-      "id": "SEP1_3HR_BUNDLE",
+      "id": "SEP_1_3HR_BUNDLE",
       "name": "Severe sepsis 3-hour bundle",
       "standard": "CMS SEP-1",
       "clock_start": "sepsis_recognition",
@@ -72,7 +72,7 @@
       "verify": true
     },
     {
-      "id": "SEP1_6HR_BUNDLE",
+      "id": "SEP_1_6HR_BUNDLE",
       "name": "Severe sepsis / septic shock 6-hour bundle",
       "standard": "CMS SEP-1",
       "clock_start": "sepsis_recognition",
